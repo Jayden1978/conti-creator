@@ -42,14 +42,22 @@ export default function SlidesGrid({ slides: initialSlides, contiType }: SlidesG
             onClick={() => setEditingSlide(slide)}
           >
             {/* 슬라이드 썸네일 */}
+            {(() => {
+              const isWideSlide = ['cover','feedback','assignment-feedback','common-qa'].includes(slide.type);
+              const isNaeshinPass = slide.type === 'passage' && contiType === '내신대비용';
+              const thumbH = isWideSlide ? 182 : (slide.type === 'passage' && !isNaeshinPass) ? 373 : 280;
+              const innerW = isWideSlide ? 1080 : 600;
+              const innerH = isWideSlide ? 600 : (slide.type === 'passage' && !isNaeshinPass) ? 1120 : 840;
+              const sc = isWideSlide ? 0.303 : 0.333;
+              return (
             <div
               className="relative overflow-hidden"
-              style={{ height: (['cover','feedback','assignment-feedback','common-qa'].includes(slide.type)) ? 182 : slide.type === 'passage' ? 373 : 280 }}
+              style={{ height: thumbH }}
             >
               <div style={{
-                width: (['cover','feedback','assignment-feedback','common-qa'].includes(slide.type)) ? 1080 : 600,
-                height: (['cover','feedback','assignment-feedback','common-qa'].includes(slide.type)) ? 600 : slide.type === 'passage' ? 1120 : 840,
-                transform: (['cover','feedback','assignment-feedback','common-qa'].includes(slide.type)) ? 'scale(0.303)' : 'scale(0.333)',
+                width: innerW,
+                height: innerH,
+                transform: `scale(${sc})`,
                 transformOrigin: 'top left',
                 pointerEvents: 'none',
               }}>
@@ -83,6 +91,8 @@ export default function SlidesGrid({ slides: initialSlides, contiType }: SlidesG
                 </div>
               </div>
             </div>
+              );
+            })()}
 
             {/* 카드 하단 */}
             <div
