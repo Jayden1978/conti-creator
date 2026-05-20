@@ -8,9 +8,10 @@ import type { SlideItem } from '@/lib/types';
 
 interface SlidesGridProps {
   slides: SlideItem[];
+  contiType?: string;
 }
 
-export default function SlidesGrid({ slides: initialSlides }: SlidesGridProps) {
+export default function SlidesGrid({ slides: initialSlides, contiType }: SlidesGridProps) {
   const [slides, setSlides] = useState<SlideItem[]>(initialSlides);
   const [editingSlide, setEditingSlide] = useState<SlideItem | null>(null);
 
@@ -52,7 +53,7 @@ export default function SlidesGrid({ slides: initialSlides }: SlidesGridProps) {
                 transformOrigin: 'top left',
                 pointerEvents: 'none',
               }}>
-                <SlideRenderer slide={slide} scale={1} />
+                <SlideRenderer slide={slide} scale={1} contiType={contiType} />
               </div>
 
               {/* 슬라이드 번호 */}

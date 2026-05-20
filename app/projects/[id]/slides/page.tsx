@@ -75,7 +75,7 @@ export default async function SlidesPage({ params }: SlidesPageProps) {
           </Link>
         </div>
       ) : (
-        <SlidesGrid slides={slides} />
+        <SlidesGrid slides={slides} contiType={(project as any).contiType || '정규수업용'} />
       )}
     </div>
   );

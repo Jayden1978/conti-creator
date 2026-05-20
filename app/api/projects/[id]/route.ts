@@ -21,6 +21,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         subject: project.subject,
         grade: project.grade,
         topic: project.topic,
+        contiType: (project as any).contiType || '정규수업용',
         status: project.status,
         analysis: project.analysis,
         createdAt: project.createdAt.toISOString(),

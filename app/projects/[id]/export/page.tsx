@@ -14,6 +14,7 @@ export default function ExportPage({ params }: ExportPageProps) {
   const { id } = use(params);
   const [slides, setSlides] = useState<SlideItem[]>([]);
   const [projectName, setProjectName] = useState('');
+  const [contiType, setContiType] = useState('정규수업용');
   const [loading, setLoading] = useState(true);
   const [downloadingIdx, setDownloadingIdx] = useState<number | null>(null);
   const [downloadingAll, setDownloadingAll] = useState(false);
@@ -24,6 +25,7 @@ export default function ExportPage({ params }: ExportPageProps) {
       .then((r) => r.json())
       .then((data) => {
         setProjectName(data.project?.name || '프로젝트');
+        setContiType(data.project?.contiType || '정규수업용');
         const allSlides: SlideItem[] = (data.slides || []).map((s: any) => ({
           ...s,
           data: typeof s.data === 'string' ? JSON.parse(s.data) : s.data,
@@ -238,7 +240,7 @@ export default function ExportPage({ params }: ExportPageProps) {
                     flexShrink: 0
                   }}
                 >
-                  <SlideRenderer slide={slide} scale={1} />
+                  <SlideRenderer slide={slide} scale={1} contiType={contiType} />
                 </div>
               </div>
             </div>

@@ -4,6 +4,7 @@ import BgRemovedImage from './BgRemovedImage';
 interface SlideRendererProps {
   slide: SlideItem;
   scale?: number;
+  contiType?: string;
 }
 
 // 커버: 가로형 840×600 / 지문: 세로형 600×1120 / 나머지: 세로형 600×840
@@ -29,7 +30,8 @@ function safeItems(items: any): string[] {
   return items.map(str);
 }
 
-export default function SlideRenderer({ slide, scale = 1 }: SlideRendererProps) {
+export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRendererProps) {
+  const isNaeshin = contiType === '내신대비용';
   const { type, data } = slide;
   const isCover = type === 'cover';
   const isPassage = type === 'passage';
@@ -523,10 +525,15 @@ export default function SlideRenderer({ slide, scale = 1 }: SlideRendererProps) 
       )
     ) : null;
 
+    // 내신대비: 글자 크기 자동 조정 (지문 길이 기준)
+    const textLen = cleanedPassageText.length || passageText.length;
+    const naeshinFontSize = textLen < 350 ? 16 : textLen < 550 ? 14 : textLen < 750 ? 13 : 12;
+    const naeshinLineHeight = textLen < 350 ? 2.1 : textLen < 550 ? 2.0 : textLen < 750 ? 1.95 : 1.85;
+
     return (
       <div style={{ ...baseStyle, background: '#1a1a1a' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: '#F97316' }} />
-        <div style={{ padding: '28px 44px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', gap: 12 }}>
+        <div style={{ padding: isNaeshin ? '20px 32px' : '28px 44px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', gap: isNaeshin ? 8 : 12 }}>
 
           {/* 헤더 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
@@ -561,24 +568,40 @@ export default function SlideRenderer({ slide, scale = 1 }: SlideRendererProps) 
             </>
           ) : (
             /* ── 일반 지문: 지문 + 보기를 하나의 flex 컨테이너에 묶어 보기가 지문 바로 아래 오도록 ── */
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
-              <div style={{ flexShrink: 0, padding: '20px 32px', background: '#242424', borderRadius: 12, border: isInlineCircle ? '1.5px solid rgba(249,115,22,0.35)' : '1px solid #333', boxSizing: 'border-box' }}>
-                {isGrammarJudge && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: isNaeshin ? 0 : 10, overflow: 'hidden' }}>
+              <div style={{
+                flex: isNaeshin ? 1 : undefined,
+                flexShrink: isNaeshin ? undefined : 0,
+                padding: isNaeshin ? '16px 20px' : '20px 32px',
+                background: '#242424',
+                borderRadius: 12,
+                border: isNaeshin ? '1px solid #333' : isInlineCircle ? '1.5px solid rgba(249,115,22,0.35)' : '1px solid #333',
+                boxSizing: 'border-box',
+              }}>
+                {!isNaeshin && isGrammarJudge && (
                   <div style={{ fontSize: 11, color: '#888', marginBottom: 10, fontStyle: 'italic' }}>
                     ※ 밑줄 친 부분 중, 어법상 <span style={{ color: '#F97316', fontWeight: 600 }}>틀린</span> 것은?
                   </div>
                 )}
-                {isVocabJudge && (
+                {!isNaeshin && isVocabJudge && (
                   <div style={{ fontSize: 11, color: '#888', marginBottom: 10, fontStyle: 'italic' }}>
                     ※ 밑줄 친 낱말 중, 문맥상 낱말의 쓰임이 <span style={{ color: '#F97316', fontWeight: 600 }}>적절하지 않은</span> 것은?
                   </div>
                 )}
-                {!isInlineCircle && underlinedText && (
+                {!isNaeshin && !isInlineCircle && underlinedText && (
                   <div style={{ fontSize: 11, color: '#888', marginBottom: 10, fontStyle: 'italic' }}>
                     ※ <span style={{ color: '#facc15', fontWeight: 600 }}>밑줄 친</span> 부분에 유의하세요
                   </div>
                 )}
-                <div style={{ fontSize: 14, color: '#e0e0e0', lineHeight: 2.0, whiteSpace: 'pre-wrap', textAlign: 'justify', wordBreak: 'break-word', ...passageFont }}>
+                <div style={{
+                  fontSize: isNaeshin ? naeshinFontSize : 14,
+                  color: '#e0e0e0',
+                  lineHeight: isNaeshin ? naeshinLineHeight : 2.0,
+                  whiteSpace: 'pre-wrap',
+                  textAlign: 'justify',
+                  wordBreak: 'break-word',
+                  ...passageFont,
+                }}>
                   {isInlineCircle
                     ? renderGrammarJudgeText(cleanedPassageText)
                     : underlinedText
@@ -589,8 +612,8 @@ export default function SlideRenderer({ slide, scale = 1 }: SlideRendererProps) 
                   <p style={{ fontSize: 11, color: '#555', marginTop: 10, textAlign: 'right' }}>— {str(data.passage.source)}</p>
                 )}
               </div>
-              {/* 보기: 지문 바로 아래 */}
-              {choicesBlock}
+              {/* 보기: 내신대비 모드에서는 숨김 */}
+              {!isNaeshin && choicesBlock}
             </div>
           )}
 
