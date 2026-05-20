@@ -7,12 +7,14 @@ interface SlideRendererProps {
   contiType?: string;
 }
 
-// 커버: 가로형 840×600 / 지문: 세로형 600×1120 / 나머지: 세로형 600×840
+// 커버: 가로형 1080×600 / 지문: 세로형 600×1120 / 내신대비 지문: 가로형 1080×700 / 나머지: 세로형 600×840
 export const COVER_W = 1080;
 export const COVER_H = 600;
 export const SLIDE_W = 600;
 export const SLIDE_H = 840;
 export const PASSAGE_H = 1120;
+export const NAESHIN_W = 1080;
+export const NAESHIN_H = 700;
 
 // AI 응답이 객체로 올 수 있으므로 안전하게 문자열 변환
 function str(val: any): string {
@@ -38,8 +40,8 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   const isWide = type === 'feedback' || type === 'assignment-feedback' || type === 'common-qa';
 
   const isNaeshinPassage = isPassage && contiType === '내신대비용';
-  const W = (isCover || isWide) ? COVER_W : SLIDE_W;
-  const H = (isCover || isWide) ? COVER_H : isNaeshinPassage ? SLIDE_H : isPassage ? PASSAGE_H : SLIDE_H;
+  const W = (isCover || isWide || isNaeshinPassage) ? (isNaeshinPassage ? NAESHIN_W : COVER_W) : SLIDE_W;
+  const H = (isCover || isWide) ? COVER_H : isNaeshinPassage ? NAESHIN_H : isPassage ? PASSAGE_H : SLIDE_H;
 
   const baseStyle: React.CSSProperties = {
     width: W,
@@ -528,8 +530,9 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
 
     // 내신대비: 글자 크기 자동 조정 (지문 길이 기준)
     const textLen = cleanedPassageText.length || passageText.length;
-    const naeshinFontSize = textLen < 300 ? 17 : textLen < 500 ? 15 : textLen < 700 ? 14 : 13;
-    const naeshinLineHeight = textLen < 300 ? 2.8 : textLen < 500 ? 2.6 : textLen < 700 ? 2.4 : 2.2;
+    // 가로형(1080×700)이므로 더 큰 폰트, 넉넉한 줄 간격
+    const naeshinFontSize = textLen < 400 ? 20 : textLen < 650 ? 17 : textLen < 900 ? 15 : 13;
+    const naeshinLineHeight = textLen < 400 ? 2.8 : textLen < 650 ? 2.6 : textLen < 900 ? 2.4 : 2.2;
 
     return (
       <div style={{ ...baseStyle, background: '#1a1a1a' }}>
