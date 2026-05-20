@@ -13,7 +13,7 @@ export const COVER_H = 600;
 export const SLIDE_W = 600;
 export const SLIDE_H = 840;
 export const PASSAGE_H = 1120;
-export const NAESHIN_W = 1080;
+export const NAESHIN_W = 780;
 export const NAESHIN_H = 700;
 
 // AI 응답이 객체로 올 수 있으므로 안전하게 문자열 변환
