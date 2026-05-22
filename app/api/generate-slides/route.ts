@@ -17,7 +17,8 @@ export async function POST(request: NextRequest) {
 
     // ① 메인 슬라이드 생성 (cover, feedback, objectives, passage×N, summary, micro-feedback)
     //    vocab/OX는 포함하지 않음 → 토큰 절약
-    const mainSlides = await generateSlides(analysis, files || []);
+    const contiType = (project as any)?.contiType || '정규수업용';
+    const mainSlides = await generateSlides(analysis, files || [], contiType);
 
     // 커버 슬라이드에 프로젝트 정보 강제 반영
     if (project) {
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
       const slide = mainSlides[i];
       finalSlides.push(slide);
 
-      if (slide.type === 'passage') {
+      if (slide.type === 'passage' && contiType !== '내신대비용') {
         passageCount++;
         const passageText = slide.data.passage?.text || (slide.data as any).text || '';
         const passageTitle = String(slide.data.title || `Passage ${passageCount}`);

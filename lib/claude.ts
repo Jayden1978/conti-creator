@@ -152,6 +152,92 @@ export async function analyzeLessonMaterial(
   return response.choices[0].message.content || '';
 }
 
+// ── 내신대비용: 지문 텍스트만 추출하여 passage 슬라이드 생성 ──
+async function generateNaeshinSlides(
+  analysis: string,
+  files: { type: 'image' | 'pdf'; base64: string; mediaType: string }[]
+): Promise<SlideItem[]> {
+  const imageFiles = files.filter((f) => f.type === 'image');
+  const content: Groq.Chat.ChatCompletionContentPart[] = [];
+
+  for (const file of imageFiles.slice(0, 6)) {
+    content.push({ type: 'image_url', image_url: { url: `data:${file.mediaType};base64,${file.base64}` } });
+  }
+
+  content.push({
+    type: 'text',
+    text: `Here is the analyzed lesson material:
+===
+${analysis}
+===
+
+Generate slides for a 내신대비(exam prep) lesson. Return ONLY valid JSON.
+
+RULES:
+- Extract ONLY the passage text from each passage. Copy WORD FOR WORD.
+- Do NOT include question types, question numbers, or answer choices.
+- Do NOT include any grammar hints, underlines, or annotations.
+- Remove any ①②③④⑤ circle numbers from the passage text.
+- Remove any ____ blanks — just include the full clean passage text.
+- Remove (A)(B)(C) labels — merge into one continuous paragraph.
+
+JSON structure:
+{
+  "slides": [
+    { "type": "cover", "data": { "title": "Lesson Title", "subtitle": "Grade/Unit" } },
+    { "type": "feedback", "data": { "title": "Micro Feedback", "items": ["지난 시간 배운 내용을 떠올려보세요.", "기억에 남는 단어나 표현이 있나요?", "오늘 수업에서 기대하는 것은?"] } },
+    { "type": "assignment-feedback", "data": { "title": "과제 피드백", "items": ["지난 과제에서 어려웠던 부분은?", "모범 답안과 비교해보세요.", "틀린 문제 유형을 다시 확인합시다."] } },
+    { "type": "common-qa", "data": { "title": "공통질문 풀이", "items": ["이 지문에서 어려운 어휘가 있었나요?", "주제문을 찾는 방법이 궁금한가요?"] } },
+    { "type": "objectives", "data": { "title": "학습 목표", "items": ["~을/를 이해할 수 있다.", "~을/를 설명할 수 있다."] } },
+    { "type": "passage", "data": { "title": "PASSAGE 1", "passage": { "text": "Full clean passage text here, no numbers, no blanks, no (A)(B)(C) labels.", "questionNumber": null, "questionType": "", "underlinedText": "" }, "choices": [] } },
+    { "type": "summary", "data": { "title": "오늘 배운 내용 정리", "items": ["한국어 요약1", "한국어 요약2"] } },
+    { "type": "micro-feedback", "data": { "title": "오늘 수업 되돌아보기", "items": ["오늘 배운 내용 중 기억에 남는 것은?", "어려웠던 부분은?", "이해도를 스스로 평가해보세요 (⭐~⭐⭐⭐⭐⭐)"] } }
+  ]
+}
+
+IMPORTANT: One passage slide per passage. Include ALL passages. passage.text must be the FULL clean text.`,
+  });
+
+  const response = await groq.chat.completions.create({
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    messages: [
+      { role: 'system', content: 'You are an English lesson slide creator for exam prep. Return ONLY valid JSON. Every slide MUST have "type" field.' },
+      { role: 'user', content },
+    ],
+    max_tokens: 8000,
+  });
+
+  const text = response.choices[0].message.content || '';
+  let jsonStr = text;
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) jsonStr = codeBlockMatch[1];
+  else { const i = text.indexOf('{'); if (i >= 0) jsonStr = text.slice(i); }
+
+  let parsed: any;
+  try { parsed = JSON.parse(jsonStr); } catch {
+    try {
+      let s = jsonStr.replace(/,\s*$/, '');
+      let b = 0, br = 0, inStr = false, esc = false;
+      for (const c of s) {
+        if (esc) { esc = false; continue; }
+        if (c === '\\' && inStr) { esc = true; continue; }
+        if (c === '"') { inStr = !inStr; continue; }
+        if (!inStr) { if (c==='{') b++; else if (c==='}') b--; else if (c==='[') br++; else if (c===']') br--; }
+      }
+      for (let i=0;i<br;i++) s+=']'; for (let i=0;i<b;i++) s+='}';
+      parsed = JSON.parse(s);
+    } catch { throw new Error('내신대비 슬라이드 생성 실패: JSON 파싱 오류'); }
+  }
+
+  if (!parsed?.slides) throw new Error('내신대비 슬라이드 생성 실패');
+
+  return parsed.slides.map((s: any, i: number) => {
+    const data = s.data && typeof s.data === 'object' && Object.keys(s.data).length > 0
+      ? s.data : (() => { const { type: _t, order: _o, ...rest } = s; return rest; })();
+    return { id: `slide-${i}`, projectId: '', order: i + 1, type: inferType(s), layout: 'title-content', data, approved: false };
+  });
+}
+
 // 타이틀 기반 타입 추론 (AI가 type 필드를 빠뜨릴 때 대비)
 function inferType(s: any): SlideItem['type'] {
   const t = String(s.type || '').toLowerCase().trim();
@@ -182,8 +268,13 @@ function inferType(s: any): SlideItem['type'] {
 
 export async function generateSlides(
   analysis: string,
-  files: { type: 'image' | 'pdf'; base64: string; mediaType: string }[]
+  files: { type: 'image' | 'pdf'; base64: string; mediaType: string }[],
+  contiType: string = '정규수업용'
 ): Promise<SlideItem[]> {
+  // ── 내신대비용: 지문 텍스트만 추출, 문제유형/선택지 없음 ──
+  if (contiType === '내신대비용') {
+    return generateNaeshinSlides(analysis, files);
+  }
   const imageFiles = files.filter((f) => f.type === 'image');
 
   const content: Groq.Chat.ChatCompletionContentPart[] = [];
