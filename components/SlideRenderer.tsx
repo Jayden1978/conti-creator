@@ -320,6 +320,9 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
     const isOrdering = /순서|order/i.test(qType);
     const isGrammarJudge = /어법성|어법 판단|어법상/i.test(qType);
     const isVocabJudge = /어휘 적절성|어휘적절|문맥상.*어휘|낱말.*적절/i.test(qType);
+    const isSentenceInsert = /문장 삽입|문장삽입|삽입/i.test(qType);
+    const isSummary = /요약문|요약/i.test(qType);
+    const isHinted = /함의|목적|주장|심경|요지|주제|제목|지칭/i.test(qType);
     // 어휘 적절성도 ①②③④⑤ 인라인 형식 동일
     const isInlineCircle = isGrammarJudge || isVocabJudge;
 
@@ -592,7 +595,22 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
                     ※ 밑줄 친 낱말 중, 문맥상 낱말의 쓰임이 <span style={{ color: '#F97316', fontWeight: 600 }}>적절하지 않은</span> 것은?
                   </div>
                 )}
-                {!isNaeshin && !isInlineCircle && underlinedText && (
+                {!isNaeshin && isSentenceInsert && underlinedText && (
+                  <div style={{ fontSize: 12, color: '#FBBF24', marginBottom: 10, padding: '6px 10px', background: 'rgba(251,191,36,0.1)', borderRadius: 6, border: '1px solid rgba(251,191,36,0.3)' }}>
+                    💬 주어진 문장: <span style={{ fontStyle: 'italic', color: '#fff' }}>{underlinedText}</span>
+                  </div>
+                )}
+                {!isNaeshin && isSummary && (
+                  <div style={{ fontSize: 11, color: '#888', marginBottom: 10, fontStyle: 'italic' }}>
+                    ※ 빈칸 <span style={{ color: '#F97316', fontWeight: 600 }}>(A)</span>, <span style={{ color: '#F97316', fontWeight: 600 }}>(B)</span>에 들어갈 말을 고르세요
+                  </div>
+                )}
+                {!isNaeshin && isHinted && underlinedText && (
+                  <div style={{ fontSize: 11, color: '#888', marginBottom: 10, fontStyle: 'italic' }}>
+                    ※ 밑줄 친 <span style={{ color: '#facc15', fontWeight: 600 }}>"{underlinedText}"</span>의 의미로 가장 적절한 것은?
+                  </div>
+                )}
+                {!isNaeshin && !isInlineCircle && !isSentenceInsert && !isSummary && !isHinted && underlinedText && (
                   <div style={{ fontSize: 11, color: '#888', marginBottom: 10, fontStyle: 'italic' }}>
                     ※ <span style={{ color: '#facc15', fontWeight: 600 }}>밑줄 친</span> 부분에 유의하세요
                   </div>

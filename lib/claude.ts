@@ -32,14 +32,29 @@ const ANALYSIS_PROMPT = `You are analyzing English lesson material for a Korean 
 ===========================================
 
 HOW TO IDENTIFY QUESTION TYPE — READ THE QUESTION CAREFULLY:
-- 빈칸추론: passage text has ____ blank(s); the choices are words or phrases to fill in
-- 글의순서: the question asks to arrange (A)(B)(C) paragraphs in order; choices are like "(A)-(C)-(B)"
-- 흐름과무관한문장: asks which sentence does not fit the flow (①②③④⑤ are sentence numbers at START of sentences)
-- 주제/요지/제목/심경/함의/지칭: comprehension questions with 5 Korean/English phrase choices
-- 어법성판단: the question says "밑줄 친 부분 중, 어법상 틀린 것은?" — about GRAMMAR errors; ①②③④⑤ inline in passage
-- 어휘 적절성: the question says "밑줄 친 낱말 중, 문맥상 낱말의 쓰임이 적절하지 않은 것은?" OR "문맥상 어색한 어휘" — about VOCABULARY that is wrong in CONTEXT; ①②③④⑤ inline in passage marking individual words
-  *** CRITICAL: If the question asks about vocabulary/word choice inappropriateness in context → "어휘 적절성". If it asks about grammar errors → "어법성 판단". These are DIFFERENT types even though both have ①②③④⑤ inline. ***
+
+COMPREHENSION TYPES (5 Korean/English phrase choices):
+- 목적: "다음 글의 목적으로 가장 적절한 것은?" — writer's purpose
+- 심경: "다음 글에 드러난 심경/심경 변화로 가장 적절한 것은?" — mood or mood change
+- 주장: "다음 글에서 필자가 주장하는 바로 가장 적절한 것은?" — writer's argument/claim
+- 함의: "밑줄 친 [표현]이 다음 글에서 의미하는 바로 가장 적절한 것은?" — implied meaning of underlined expression
+- 요지: "다음 글의 요지로 가장 적절한 것은?" — main point
+- 주제: "다음 글의 주제로 가장 적절한 것은?" — topic/subject
+- 제목: "다음 글의 제목으로 가장 적절한 것은?" — title
+- 지칭: "밑줄 친 (a)~(e) 중에서 가리키는 대상이 나머지 넷과 다른 것은?" — referent identification
+
+LANGUAGE TYPES:
+- 어법성판단: "밑줄 친 부분 중, 어법상 틀린 것은?" — GRAMMAR errors; ①②③④⑤ inline in passage marking words/phrases
+- 어휘 적절성: "밑줄 친 낱말 중, 문맥상 낱말의 쓰임이 적절하지 않은 것은?" — VOCABULARY wrong in context; ①②③④⑤ inline marking individual words
+  *** CRITICAL: vocabulary question → "어휘 적절성" / grammar question → "어법성 판단". DIFFERENT types even though both use ①②③④⑤ inline. ***
 - 알맞은표현(어법): "(A)(B)(C) 각 네모에서 어법에 맞는 표현" with [word1/word2] choices in text
+
+STRUCTURE TYPES:
+- 빈칸추론: passage has ____ blank(s); choices are words/phrases to fill in the blank
+- 글의순서: "주어진 글 다음에 이어질 글의 순서로 가장 적절한 것은?" — arrange (A)(B)(C) paragraphs; choices like "(A)-(C)-(B)"
+- 흐름과무관한문장: "전체 흐름과 관계 없는 문장은?" — ①②③④⑤ at START of sentences, find the irrelevant one
+- 문장삽입: "주어진 문장이 들어가기에 가장 적절한 곳은?" — ①②③④⑤ mark INSERTION POINTS between sentences; a separate "given sentence" must be noted
+- 요약문완성: "다음 글의 내용을 한 문장으로 요약하고자 한다. 빈칸 (A), (B)에 들어갈 말로..." — passage + summary sentence with TWO blanks (A) and (B); choices are word pairs like "① (A)certain — (B)eliminate"
 
 Please extract and provide:
 
@@ -57,13 +72,13 @@ Please extract and provide:
 
    CHOICES (copy EXACTLY from original):
    [For 어법성판단 / 어휘 적절성: "① ② ③ ④ ⑤" — these circle numbers ARE the answer choices]
-   [For 알맞은표현(어법): The exam shows a table with (A)(B)(C) columns and 5 rows. Copy each row as one choice string:
-    "① [A-value] - [B-value] - [C-value]", "② ...", "③ ...", "④ ...", "⑤ ..."
-    Example: "① satisfied - their - because", "② satisfied - whose - because of", etc.
-    NEVER use JSON objects. Always extract all 5 full-row combinations.]
+   [For 알맞은표현(어법): table with (A)(B)(C) columns. Copy each row: "① [A] - [B] - [C]", "② ...", etc. NEVER use JSON objects.]
+   [For 문장삽입: copy the GIVEN SENTENCE as a special note, then choices are "① ② ③ ④ ⑤"]
+   [For 요약문완성: copy all 5 word-pair choices verbatim, e.g. "① (A)certain — (B)eliminate"]
    [For others: copy all 5 choices ①②③④⑤ verbatim]
 
-   UNDERLINED TEXT: [exact phrase that is underlined in the original, if any — not for 어법성판단]
+   UNDERLINED TEXT: [exact phrase underlined in the original — required for 함의 type]
+   GIVEN SENTENCE: [for 문장삽입 only — copy the sentence that needs to be inserted]
 5. Grammar Points
 6. Exercise Types`;
 
@@ -326,10 +341,12 @@ RULES:
 1. "type" field is MANDATORY
 2. objectives → KOREAN, "~할 수 있다" form, 3~4 items
 3. passage "questionType" → copy EXACTLY from analysis. Valid values:
-   "빈칸 추론" / "글의 순서" / "흐름과 무관한 문장" / "주제" / "요지" / "제목" / "심경" / "어법성 판단" / "어휘 적절성" / "알맞은 표현(어법)"
-   CRITICAL: "어휘 적절성" = vocabulary wrong in context ("문맥상 낱말의 쓰임이 적절하지 않은 것은?")
-             "어법성 판단" = grammar wrong ("어법상 틀린 것은?")
-             DO NOT confuse these two — read the question text carefully.
+   "목적" / "심경" / "주장" / "함의" / "요지" / "주제" / "제목" / "지칭" /
+   "어법성 판단" / "어휘 적절성" / "알맞은 표현(어법)" /
+   "빈칸 추론" / "글의 순서" / "흐름과 무관한 문장" / "문장 삽입" / "요약문 완성"
+   CRITICAL: "어휘 적절성" = vocabulary wrong in context / "어법성 판단" = grammar wrong. DO NOT confuse.
+   For "문장 삽입": put the given sentence in underlinedText field.
+   For "요약문 완성": passage text ends with the summary sentence including (A) and (B) blanks.
 4. passage "questionNumber" → integer from analysis (e.g. 29)
 5. passage "text" → copy EXACTLY from analysis including all special characters ①②③④⑤ ____ (A)(B)(C)
 6. passage "choices" → ALWAYS a flat array of 5 plain strings. NEVER use JSON objects or nested arrays inside choices.
