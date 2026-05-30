@@ -307,30 +307,53 @@ function parsePassagesFromAnalysis(analysis: string): Array<{
   givenSentence: string;
 }> {
   const passages: ReturnType<typeof parsePassagesFromAnalysis> = [];
-  // PASSAGE [N]: ... 구분자로 분리
-  const blocks = analysis.split(/===\s*PASSAGE\s*\d+:/i).slice(1);
+
+  // 다양한 PASSAGE 구분자 패턴 시도
+  const splitPatterns = [
+    /={2,}\s*PASSAGE\s*\d+\s*:/gi,           // === PASSAGE 1:
+    /#{1,3}\s*PASSAGE\s*\d+\s*:/gi,           // ### PASSAGE 1:
+    /PASSAGE\s*\[\d+\]\s*:/gi,                // PASSAGE [1]:
+    /\n\s*PASSAGE\s*\d+\s*:/gi,               // \nPASSAGE 1:
+    /\n\s*={2,}\s*PASSAGE\s*\d+/gi,           // \n=== PASSAGE 1
+  ];
+
+  let blocks: string[] = [];
+  for (const pattern of splitPatterns) {
+    const parts = analysis.split(pattern);
+    if (parts.length > 1) { blocks = parts.slice(1); break; }
+  }
+
+  // 패턴으로 못 찾으면 PASSAGE TEXT 섹션을 직접 찾기
+  if (blocks.length === 0) {
+    const passageTextMatches = [...analysis.matchAll(/PASSAGE TEXT[^:]*:\s*([\s\S]*?)(?=CHOICES|={3,}|#{2,}|$)/gi)];
+    const choicesMatches = [...analysis.matchAll(/CHOICES[^:]*:\s*([\s\S]*?)(?=UNDERLINED|GIVEN|={3,}|#{2,}|$)/gi)];
+    for (let i = 0; i < passageTextMatches.length; i++) {
+      const rawText = passageTextMatches[i][1].trim();
+      const choicesRaw = choicesMatches[i]?.[1] || '';
+      const choices = choicesRaw.split('\n').map(l => l.trim()).filter(l => /^[①②③④⑤]/.test(l)).slice(0, 5);
+      if (rawText) {
+        passages.push({ questionNumber: null, questionType: '', text: rawText, choices, underlinedText: '', givenSentence: '' });
+      }
+    }
+    return passages;
+  }
 
   for (const block of blocks) {
     // 헤더에서 문제번호, 유형 추출
-    const headerMatch = block.match(/^([^=\n]*)/);
-    const header = headerMatch ? headerMatch[1].trim() : '';
-    const qNumMatch = header.match(/(\d+)/);
+    const header = block.match(/^([^\n]{0,80})/)?.[1] || '';
+    const qNumMatch = header.match(/(\d{2})/);
     const qNum = qNumMatch ? parseInt(qNumMatch[1]) : null;
-    const qTypeMatch = header.match(/—\s*(.+)/);
-    const qType = qTypeMatch ? qTypeMatch[1].trim() : '';
+    const qTypeMatch = header.match(/[—\-–]\s*(.+)/);
+    const qType = qTypeMatch ? qTypeMatch[1].replace(/={1,}/g, '').trim() : '';
 
     // PASSAGE TEXT 섹션 추출
-    const textMatch = block.match(/PASSAGE TEXT[^:]*:\s*([\s\S]*?)(?=CHOICES|UNDERLINED TEXT|GIVEN SENTENCE|===|$)/i);
+    const textMatch = block.match(/PASSAGE TEXT[^:]*:\s*([\s\S]*?)(?=CHOICES|UNDERLINED TEXT|GIVEN SENTENCE|={3,}|#{2,}|$)/i);
     const rawText = textMatch ? textMatch[1].trim() : '';
 
     // CHOICES 섹션 추출
-    const choicesMatch = block.match(/CHOICES[^:]*:\s*([\s\S]*?)(?=UNDERLINED TEXT|GIVEN SENTENCE|===|$)/i);
+    const choicesMatch = block.match(/CHOICES[^:]*:\s*([\s\S]*?)(?=UNDERLINED TEXT|GIVEN SENTENCE|={3,}|#{2,}|$)/i);
     const choicesRaw = choicesMatch ? choicesMatch[1].trim() : '';
-    const choices = choicesRaw
-      .split('\n')
-      .map(l => l.trim())
-      .filter(l => /^[①②③④⑤]/.test(l))
-      .slice(0, 5);
+    const choices = choicesRaw.split('\n').map(l => l.trim()).filter(l => /^[①②③④⑤]/.test(l)).slice(0, 5);
 
     // UNDERLINED TEXT 추출
     const underlinedMatch = block.match(/UNDERLINED TEXT:\s*([^\n]*)/i);
