@@ -297,6 +297,37 @@ function inferType(s: any): SlideItem['type'] {
   return 'custom';
 }
 
+// ── 선택지 파싱: 줄바꿈 또는 인라인(①②③④⑤ 구분) 모두 처리 ──
+function splitChoices(raw: string): string[] {
+  const circleNums = ['①','②','③','④','⑤'];
+  // 줄 단위로 먼저 시도
+  const byLine = raw.split('\n').map(l => l.trim()).filter(l => /^[①②③④⑤]/.test(l));
+  if (byLine.length >= 2) return byLine.slice(0, 5);
+  // 인라인: ①...②...③...④...⑤... 패턴 분리
+  const inline = raw.replace(/\n/g, ' ');
+  const parts = inline.split(/(?=[②③④⑤])/);
+  if (parts.length >= 2) {
+    return parts.map(p => p.trim()).filter(p => /^[①②③④⑤]/.test(p)).slice(0, 5);
+  }
+  // 첫 번째 ①로 시작하는 전체를 인라인으로 분리
+  const fromFirst = inline.slice(inline.search(/[①②③④⑤]/));
+  if (fromFirst) {
+    const result: string[] = [];
+    let cur = '';
+    for (let i = 0; i < fromFirst.length; i++) {
+      if (circleNums.includes(fromFirst[i]) && cur) {
+        result.push(cur.trim());
+        cur = fromFirst[i];
+      } else {
+        cur += fromFirst[i];
+      }
+    }
+    if (cur) result.push(cur.trim());
+    return result.slice(0, 5);
+  }
+  return byLine.slice(0, 5);
+}
+
 // ── 분석 텍스트에서 지문 파싱 (토큰 절약) ──
 function parsePassagesFromAnalysis(analysis: string): Array<{
   questionNumber: number | null;
@@ -330,7 +361,7 @@ function parsePassagesFromAnalysis(analysis: string): Array<{
     for (let i = 0; i < passageTextMatches.length; i++) {
       const rawText = passageTextMatches[i][1].trim();
       const choicesRaw = choicesMatches[i]?.[1] || '';
-      const choices = choicesRaw.split('\n').map(l => l.trim()).filter(l => /^[①②③④⑤]/.test(l)).slice(0, 5);
+      const choices = splitChoices(choicesRaw);
       if (rawText) {
         passages.push({ questionNumber: null, questionType: '', text: rawText, choices, underlinedText: '', givenSentence: '' });
       }
@@ -353,7 +384,7 @@ function parsePassagesFromAnalysis(analysis: string): Array<{
     // CHOICES 섹션 추출
     const choicesMatch = block.match(/CHOICES[^:]*:\s*([\s\S]*?)(?=UNDERLINED TEXT|GIVEN SENTENCE|={3,}|#{2,}|$)/i);
     const choicesRaw = choicesMatch ? choicesMatch[1].trim() : '';
-    const choices = choicesRaw.split('\n').map(l => l.trim()).filter(l => /^[①②③④⑤]/.test(l)).slice(0, 5);
+    const choices = splitChoices(choicesRaw);
 
     // UNDERLINED TEXT 추출
     const underlinedMatch = block.match(/UNDERLINED TEXT:\s*([^\n]*)/i);

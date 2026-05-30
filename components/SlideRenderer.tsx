@@ -311,7 +311,24 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   /* ── PASSAGE (600×1120, 좌우 대칭, 보기 포함) ── */
   if (type === 'passage') {
     const passageText = str(data.passage?.text ?? (data as any).passage);
-    const choices: string[] = Array.isArray((data as any).choices) ? (data as any).choices : [];
+    // 선택지 파싱: 하나로 뭉쳐온 경우 ①②③④⑤ 기준으로 분리
+    const rawChoices: string[] = Array.isArray((data as any).choices) ? (data as any).choices : [];
+    const choices: string[] = (() => {
+      if (rawChoices.length >= 2) return rawChoices;
+      const joined = rawChoices.join(' ');
+      if (!joined) return rawChoices;
+      const circleNums = ['①','②','③','④','⑤'];
+      if (!circleNums.some(n => joined.includes(n))) return rawChoices;
+      const result: string[] = [];
+      let cur = '';
+      for (let i = 0; i < joined.length; i++) {
+        if (circleNums.includes(joined[i]) && cur.trim()) {
+          result.push(cur.trim()); cur = joined[i];
+        } else { cur += joined[i]; }
+      }
+      if (cur.trim()) result.push(cur.trim());
+      return result.length >= 2 ? result : rawChoices;
+    })();
     const qNum = data.passage?.questionNumber ?? (data as any).questionNumber ?? null;
     const qType = data.passage?.questionType || (data as any).questionType || '';
     const underlinedText: string = str(data.passage?.underlinedText ?? (data as any).underlinedText ?? '');
