@@ -52,6 +52,7 @@ LANGUAGE TYPES:
 STRUCTURE TYPES:
 - 빈칸추론: passage has ____ blank(s); choices are words/phrases to fill in the blank
 - 글의순서: "주어진 글 다음에 이어질 글의 순서로 가장 적절한 것은?" — arrange (A)(B)(C) paragraphs; choices like "(A)-(C)-(B)"
+  *** CRITICAL: If choices are word/phrase pairs like "① In addition — However" or "① certain — eliminate" → this is NOT 글의순서. It is 빈칸추론 with two blanks (A)(B). ***
 - 흐름과무관한문장: "전체 흐름과 관계 없는 문장은?" — ①②③④⑤ at START of sentences, find the irrelevant one
 - 문장삽입: "주어진 문장이 들어가기에 가장 적절한 곳은?" — ①②③④⑤ mark INSERTION POINTS between sentences; a separate "given sentence" must be noted
 - 요약문완성: "다음 글의 내용을 한 문장으로 요약하고자 한다. 빈칸 (A), (B)에 들어갈 말로..." — passage + summary sentence with TWO blanks (A) and (B); choices are word pairs like "① (A)certain — (B)eliminate"
