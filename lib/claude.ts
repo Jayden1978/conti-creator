@@ -297,6 +297,56 @@ function inferType(s: any): SlideItem['type'] {
   return 'custom';
 }
 
+// ── 분석 텍스트에서 지문 파싱 (토큰 절약) ──
+function parsePassagesFromAnalysis(analysis: string): Array<{
+  questionNumber: number | null;
+  questionType: string;
+  text: string;
+  choices: string[];
+  underlinedText: string;
+  givenSentence: string;
+}> {
+  const passages: ReturnType<typeof parsePassagesFromAnalysis> = [];
+  // PASSAGE [N]: ... 구분자로 분리
+  const blocks = analysis.split(/===\s*PASSAGE\s*\d+:/i).slice(1);
+
+  for (const block of blocks) {
+    // 헤더에서 문제번호, 유형 추출
+    const headerMatch = block.match(/^([^=\n]*)/);
+    const header = headerMatch ? headerMatch[1].trim() : '';
+    const qNumMatch = header.match(/(\d+)/);
+    const qNum = qNumMatch ? parseInt(qNumMatch[1]) : null;
+    const qTypeMatch = header.match(/—\s*(.+)/);
+    const qType = qTypeMatch ? qTypeMatch[1].trim() : '';
+
+    // PASSAGE TEXT 섹션 추출
+    const textMatch = block.match(/PASSAGE TEXT[^:]*:\s*([\s\S]*?)(?=CHOICES|UNDERLINED TEXT|GIVEN SENTENCE|===|$)/i);
+    const rawText = textMatch ? textMatch[1].trim() : '';
+
+    // CHOICES 섹션 추출
+    const choicesMatch = block.match(/CHOICES[^:]*:\s*([\s\S]*?)(?=UNDERLINED TEXT|GIVEN SENTENCE|===|$)/i);
+    const choicesRaw = choicesMatch ? choicesMatch[1].trim() : '';
+    const choices = choicesRaw
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => /^[①②③④⑤]/.test(l))
+      .slice(0, 5);
+
+    // UNDERLINED TEXT 추출
+    const underlinedMatch = block.match(/UNDERLINED TEXT:\s*([^\n]*)/i);
+    const underlinedText = underlinedMatch ? underlinedMatch[1].trim().replace(/^\[|\]$/g, '') : '';
+
+    // GIVEN SENTENCE 추출 (문장삽입)
+    const givenMatch = block.match(/GIVEN SENTENCE:\s*([^\n]*)/i);
+    const givenSentence = givenMatch ? givenMatch[1].trim().replace(/^\[|\]$/g, '') : '';
+
+    if (rawText) {
+      passages.push({ questionNumber: qNum, questionType: qType, text: rawText, choices, underlinedText, givenSentence });
+    }
+  }
+  return passages;
+}
+
 export async function generateSlides(
   analysis: string,
   files: { type: 'image' | 'pdf'; base64: string; mediaType: string }[],
@@ -306,210 +356,72 @@ export async function generateSlides(
   if (contiType === '내신대비용') {
     return generateNaeshinSlides(analysis, files);
   }
-  const imageFiles = files.filter((f) => f.type === 'image');
 
-  const content: Groq.Chat.ChatCompletionContentPart[] = [];
+  // ── 정규수업용: 지문은 분석 텍스트에서 파싱, AI는 커버/학습목표만 생성 ──
+  const parsedPassages = parsePassagesFromAnalysis(analysis);
 
-  for (const file of imageFiles.slice(0, 6)) {
-    content.push({
-      type: 'image_url',
-      image_url: { url: `data:${file.mediaType};base64,${file.base64}` },
-    });
-  }
-
-  content.push({
-    type: 'text',
-    text: `Here is the analyzed lesson material:
-===
-${analysis}
-===
-
-Generate English lesson slides as JSON. Return ONLY valid JSON, no markdown, no explanation.
-
-==== ABSOLUTE RULES — NEVER VIOLATE ====
-A. NEVER change the question type. Use EXACTLY the questionType from the analysis.
-B. NEVER rewrite passage text. Copy it CHARACTER BY CHARACTER from the analysis.
-C. For 어법성판단: the passage text MUST contain ①②③④⑤ INLINE. These Unicode circled numbers (①②③④⑤) mark the underlined words. They MUST appear inside the passage text exactly where they are in the analysis. DO NOT put them only in the choices array. DO NOT delete them from the text.
-D. For 빈칸추론: the ____ blank MUST stay in the passage text.
-E. For 글의순서: (A)(B)(C) sections MUST stay in the passage text.
-===========================================
-
-SLIDE ORDER: cover → feedback → assignment-feedback → common-qa → objectives → [passage per passage] → summary → micro-feedback
-NOTE: vocabulary/ox-quiz/ox-answer are generated separately — do NOT include here.
-
-JSON structure:
-{
-  "slides": [
-    { "type": "cover", "data": { "title": "Lesson Title", "subtitle": "Grade/Unit" } },
-    { "type": "feedback", "data": { "title": "Micro Feedback", "items": ["지난 시간에 배운 내용을 떠올려보세요.", "기억에 남는 단어나 표현이 있나요?", "오늘 수업에서 기대하는 것은 무엇인가요?"] } },
-    { "type": "assignment-feedback", "data": { "title": "과제 피드백", "items": ["지난 과제에서 많이 틀린 문제 유형은 무엇이었나요?", "어려웠던 어휘나 표현을 다시 확인해봅시다.", "모범 답안과 자신의 답을 비교해보세요."] } },
-    { "type": "common-qa", "data": { "title": "공통질문 풀이", "items": ["이 지문에서 가장 어려운 문법 포인트는 무엇인가요?", "주제문을 찾는 방법에 대해 질문이 있나요?", "어휘 중 뜻이 헷갈리는 단어가 있었나요?"] } },
-    { "type": "objectives", "data": { "title": "학습 목표", "items": ["~을/를 이해할 수 있다.", "~을/를 설명할 수 있다.", "~을/를 파악할 수 있다."] } },
-    { "type": "passage", "data": { "title": "29번 — 어법성 판단", "passage": { "text": "Passage text WITH ①②③④⑤ markers inline e.g. 'people ① who hold a more interdependent self ② tend to cope...'", "questionNumber": 29, "questionType": "어법성 판단", "underlinedText": "" }, "choices": ["①", "②", "③", "④", "⑤"] } },
-    { "type": "passage", "data": { "title": "33번 — 빈칸 추론", "passage": { "text": "Full passage text here with ____ blank preserved.", "questionNumber": 33, "questionType": "빈칸 추론", "underlinedText": "" }, "choices": ["① choice text", "② choice text", "③ choice text", "④ choice text", "⑤ choice text"] } },
-    { "type": "passage", "data": { "title": "36번 — 글의 순서", "passage": { "text": "Intro paragraph.\n\n(A) Section A text.\n\n(B) Section B text.\n\n(C) Section C text.", "questionNumber": 36, "questionType": "글의 순서", "underlinedText": "" }, "choices": ["① (A)-(C)-(B)", "② (B)-(A)-(C)", "③ (B)-(C)-(A)", "④ (C)-(A)-(B)", "⑤ (C)-(B)-(A)"] } },
-    { "type": "summary", "data": { "title": "오늘 배운 내용 정리", "items": ["한국어 요약1", "한국어 요약2"] } },
-    { "type": "micro-feedback", "data": { "title": "오늘 수업 되돌아보기", "items": ["오늘 배운 내용 중 기억에 남는 것은?", "어려웠던 부분은 무엇인가요?", "이해도를 스스로 평가해보세요 (⭐~⭐⭐⭐⭐⭐)"] } }
-  ]
-}
-
-RULES:
-1. "type" field is MANDATORY
-2. objectives → KOREAN, "~할 수 있다" form, 3~4 items
-3. passage "questionType" → copy EXACTLY from analysis. Valid values:
-   "목적" / "심경" / "주장" / "함의" / "요지" / "주제" / "제목" / "지칭" /
-   "어법성 판단" / "어휘 적절성" / "알맞은 표현(어법)" /
-   "빈칸 추론" / "글의 순서" / "흐름과 무관한 문장" / "문장 삽입" / "요약문 완성"
-   CRITICAL: "어휘 적절성" = vocabulary wrong in context / "어법성 판단" = grammar wrong. DO NOT confuse.
-   For "문장 삽입": put the given sentence in underlinedText field.
-   For "요약문 완성": passage text ends with the summary sentence including (A) and (B) blanks.
-4. passage "questionNumber" → integer from analysis (e.g. 29)
-5. passage "text" → copy EXACTLY from analysis including all special characters ①②③④⑤ ____ (A)(B)(C)
-6. passage "choices" → ALWAYS a flat array of 5 plain strings. NEVER use JSON objects or nested arrays inside choices.
-   - 어법성 판단: ["①", "②", "③", "④", "⑤"]
-   - 글의 순서: ["① (A)-(C)-(B)", "② (B)-(A)-(C)", "③ (B)-(C)-(A)", "④ (C)-(A)-(B)", "⑤ (C)-(B)-(A)"]
-   - 알맞은 표현(어법): MUST be 5 plain strings, each a full row combination: "① [A] - [B] - [C]". Example: ["① satisfied - their - because", "② satisfied - whose - because of", "③ to satisfy - their - because", "④ to satisfy - whose - because of", "⑤ to satisfy - their - because of"]. NEVER use {"A":[...]} JSON format.
-   - others: exact choice text strings from analysis (e.g. "① to save money", "② to make friends")
-7. passage "underlinedText" → exact underlined phrase if any, else ""
-8. One passage slide per passage — include ALL
-9. DO NOT include vocabulary/ox-quiz/ox-answer slides`,
-  });
-
-  const response = await groq.chat.completions.create({
+  // AI에게 커버 제목/학습목표만 요청 (토큰 절약)
+  const metaResponse = await groq.chat.completions.create({
     model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     messages: [
-      {
-        role: 'system',
-        content: 'You are an English lesson slide creator. Return ONLY valid JSON. Every slide MUST have "type" field. No markdown, no extra text.',
-      },
-      { role: 'user', content },
-    ],
-    max_tokens: 8000,
-  });
-
-  const text = response.choices[0].message.content || '';
-
-  // JSON 추출 (마크다운 코드블록 포함 처리)
-  let jsonStr = text;
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    jsonStr = codeBlockMatch[1];
-  } else {
-    const braceStart = text.indexOf('{');
-    if (braceStart >= 0) jsonStr = text.slice(braceStart);
-  }
-
-  if (!jsonStr) throw new Error('슬라이드 생성 실패: AI 응답에서 JSON을 찾을 수 없습니다.');
-
-  // 잘린 JSON 복구 함수 — 브라켓 균형 맞추기
-  function recoverJSON(s: string): any {
-    // 1) 직접 파싱 시도
-    try { return JSON.parse(s); } catch {}
-
-    // 2) 브라켓 균형 복구: 열린 문자열/괄호를 추적해서 닫기
-    function balanceAndParse(raw: string): any {
-      let result = raw;
-
-      // 2a) 미완성 문자열 찾기: 마지막 열린 " 뒤를 제거
-      let inString = false;
-      let escaped = false;
-      let lastStringStart = -1;
-      for (let i = 0; i < result.length; i++) {
-        if (escaped) { escaped = false; continue; }
-        if (result[i] === '\\' && inString) { escaped = true; continue; }
-        if (result[i] === '"') {
-          if (inString) { inString = false; lastStringStart = -1; }
-          else { inString = true; lastStringStart = i; }
-        }
-      }
-      if (inString && lastStringStart >= 0) {
-        result = result.slice(0, lastStringStart);
-      }
-
-      // 2b) 끝의 쉼표 제거
-      result = result.replace(/,\s*$/, '');
-
-      // 2c) 열린 {[ 개수 세어서 닫기
-      let braces = 0, brackets = 0;
-      inString = false; escaped = false;
-      for (const c of result) {
-        if (escaped) { escaped = false; continue; }
-        if (c === '\\' && inString) { escaped = true; continue; }
-        if (c === '"') { inString = !inString; continue; }
-        if (!inString) {
-          if (c === '{') braces++;
-          else if (c === '}') braces--;
-          else if (c === '[') brackets++;
-          else if (c === ']') brackets--;
-        }
-      }
-      for (let i = 0; i < brackets; i++) result += ']';
-      for (let i = 0; i < braces; i++) result += '}';
-
-      return JSON.parse(result);
-    }
-
-    // 3) 전체 문자열로 균형 복구 시도
-    try { return balanceAndParse(s); } catch {}
-
-    // 4) 마지막 완성된 슬라이드 경계에서 잘라낸 뒤 복구
-    //    "type" 키가 등장하는 마지막 위치 이전의 },  를 찾아서 거기서 자르기
-    const lastTypeIdx = s.lastIndexOf('"type"');
-    if (lastTypeIdx > 0) {
-      const cutPoint = s.lastIndexOf('},', lastTypeIdx);
-      if (cutPoint > 0) {
-        try { return balanceAndParse(s.slice(0, cutPoint + 1)); } catch {}
-      }
-    }
-
-    // 5) 마지막 }}, 또는 }} 앞까지 잘라서 복구
-    const lastDblClose = s.lastIndexOf('}}');
-    if (lastDblClose > 0) {
-      try { return balanceAndParse(s.slice(0, lastDblClose + 2)); } catch {}
-    }
-
-    throw new Error('슬라이드 생성 실패: JSON 파싱 오류');
-  }
-
-  let parsed: any;
-  try {
-    parsed = recoverJSON(jsonStr);
-  } catch (e: any) {
-    // 디버그: 실제 응답 끝부분 로그
-    console.error('=== JSON 파싱 실패 디버그 ===');
-    console.error('응답 전체 길이:', jsonStr.length);
-    console.error('응답 마지막 300자:', jsonStr.slice(-300));
-    console.error('응답 처음 200자:', jsonStr.slice(0, 200));
-    throw new Error(e?.message || '슬라이드 생성 실패: JSON 파싱 오류');
-  }
-
-  if (!parsed?.slides || !Array.isArray(parsed.slides) || parsed.slides.length === 0) {
-    throw new Error('슬라이드 생성 실패: 슬라이드 데이터가 없습니다.');
-  }
-
-  return parsed.slides.map((s: any, i: number) => {
-    // data가 별도 키로 있으면 사용, 없으면 top-level 필드 사용
-    const data = s.data && typeof s.data === 'object' && Object.keys(s.data).length > 0
-      ? s.data
-      : (() => {
-          const { type: _t, order: _o, layout: _l, id: _i, ...rest } = s;
-          return rest;
-        })();
-
-    // type 추론 (AI가 빠뜨릴 경우 대비)
-    const resolvedType = inferType(s);
-
-    return {
-      id: `slide-${i}`,
-      projectId: '',
-      order: s.order || i + 1,
-      type: resolvedType,
-      layout: s.layout || 'title-content',
-      data,
-      approved: false,
-    };
-  });
+      { role: 'system', content: 'Return ONLY valid JSON, no markdown.' },
+      { role: 'user', content: `Based on this English lesson analysis, return ONLY this JSON:
+{
+  "title": "수업 제목 (Korean, e.g. 모의고사 대비)",
+  "subtitle": "학년 · 단원 (e.g. 고2 · 모의고사 3월)",
+  "objectives": ["~을/를 이해할 수 있다.", "~을/를 설명할 수 있다.", "~을/를 파악할 수 있다.", "~을/를 적용할 수 있다."]
 }
+
+Analysis summary (first 800 chars):
+${analysis.slice(0, 800)}` },
+    ],
+    max_tokens: 400,
+  });
+
+  // 메타 정보 파싱
+  const metaText = metaResponse.choices[0].message.content || '';
+  let meta: any = { title: '영어 수업', subtitle: '', objectives: [] };
+  try {
+    const mi = metaText.indexOf('{');
+    if (mi >= 0) meta = JSON.parse(metaText.slice(mi));
+  } catch { /* 기본값 사용 */ }
+
+  // ── 슬라이드 조립 (AI 없이) ──
+  let idx = 0;
+  const mk = (type: SlideItem['type'], data: any): SlideItem => ({
+    id: `slide-${idx}`, projectId: '', order: ++idx, type, layout: 'title-content', data, approved: false,
+  });
+
+  const slides: SlideItem[] = [];
+  slides.push(mk('cover', { title: meta.title || '영어 수업', subtitle: meta.subtitle || '' }));
+  slides.push(mk('feedback', { title: 'Micro Feedback', items: ['지난 시간에 배운 내용을 떠올려보세요.', '기억에 남는 단어나 표현이 있나요?', '오늘 수업에서 기대하는 것은 무엇인가요?'] }));
+  slides.push(mk('assignment-feedback', { title: '과제 피드백', items: ['지난 과제에서 많이 틀린 문제 유형은 무엇이었나요?', '어려웠던 어휘나 표현을 다시 확인해봅시다.', '모범 답안과 자신의 답을 비교해보세요.'] }));
+  slides.push(mk('common-qa', { title: '공통질문 풀이', items: ['이 지문에서 가장 어려운 문법 포인트는?', '주제문을 찾는 방법에 대해 질문이 있나요?', '어휘 중 뜻이 헷갈리는 단어가 있었나요?'] }));
+  slides.push(mk('objectives', { title: '학습 목표', items: meta.objectives?.length ? meta.objectives : ['지문을 정확히 이해할 수 있다.', '핵심 어휘를 파악할 수 있다.', '글의 논리적 흐름을 파악할 수 있다.'] }));
+
+  for (const p of parsedPassages) {
+    const qLabel = p.questionNumber ? `${p.questionNumber}번` : 'PASSAGE';
+    const typeLabel = p.questionType ? ` — ${p.questionType}` : '';
+    // 문장삽입: givenSentence를 underlinedText로
+    const underlined = p.givenSentence || p.underlinedText;
+    slides.push(mk('passage', {
+      title: `${qLabel}${typeLabel}`,
+      passage: { text: p.text, questionNumber: p.questionNumber, questionType: p.questionType, underlinedText: underlined },
+      choices: p.choices,
+    }));
+  }
+
+  slides.push(mk('summary', { title: '오늘 배운 내용 정리', items: ['오늘 학습한 지문의 핵심 내용을 정리해봅시다.', '새로 배운 어휘와 표현을 복습합니다.', '문제 유형별 풀이 전략을 확인합시다.'] }));
+  slides.push(mk('micro-feedback', { title: '오늘 수업 되돌아보기', items: ['오늘 배운 내용 중 기억에 남는 것은?', '어려웠던 부분은 무엇인가요?', '이해도를 스스로 평가해보세요 (⭐~⭐⭐⭐⭐⭐)'] }));
+
+  // 파싱된 지문이 없으면 에러
+  if (parsedPassages.length === 0) {
+    throw new Error('지문을 찾을 수 없습니다. 분석을 다시 시도해주세요.');
+  }
+
+  return slides;
+}
+
 
 /** 지문 1개에 대한 어휘 + OX 퀴즈/답 슬라이드 생성 */
 export async function generateVocabAndOXSlides(
