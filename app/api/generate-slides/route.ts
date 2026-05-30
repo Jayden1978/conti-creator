@@ -46,17 +46,17 @@ export async function POST(request: NextRequest) {
       const slide = mainSlides[i];
       finalSlides.push(slide);
 
-      if (slide.type === 'passage' && contiType !== '내신대비용') {
+      if (slide.type === 'passage') {
         passageCount++;
         const passageText = slide.data.passage?.text || (slide.data as any).text || '';
         const passageTitle = String(slide.data.title || `Passage ${passageCount}`);
 
         if (passageText) {
-          // 어휘 + OX 퀴즈/답 생성 (passage 바로 뒤)
+          // 어휘 + OX 퀴즈/답 생성 (passage 바로 뒤) — 내신대비도 포함
           const vocabOXSlides = await generateVocabAndOXSlides(passageText, passageTitle, passageCount);
           finalSlides.push(...vocabOXSlides);
 
-          // 어법 퀴즈/답 생성 (OX 답 뒤)
+          // 어법 퀴즈/답 생성 (OX 답 뒤) — 내신대비도 포함
           const grammarSlides = await generateGrammarSlides(passageText, passageTitle, passageCount);
           finalSlides.push(...grammarSlides);
         }

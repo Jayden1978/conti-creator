@@ -179,6 +179,7 @@ async function generateNaeshinSlides(
     content.push({ type: 'image_url', image_url: { url: `data:${file.mediaType};base64,${file.base64}` } });
   }
 
+  // AI는 cover, objectives, passage만 생성 — 나머지는 코드에서 직접 삽입
   content.push({
     type: 'text',
     text: `Here is the analyzed lesson material:
@@ -186,37 +187,31 @@ async function generateNaeshinSlides(
 ${analysis}
 ===
 
-Generate slides for a 내신대비(exam prep) lesson. Return ONLY valid JSON.
+Extract passage texts for a 내신대비(exam prep) lesson. Return ONLY valid JSON.
 
 RULES:
-- Extract ONLY the passage text from each passage. Copy WORD FOR WORD.
-- Do NOT include question types, question numbers, or answer choices.
-- Do NOT include any grammar hints, underlines, or annotations.
-- Remove any ①②③④⑤ circle numbers from the passage text.
-- Remove any ____ blanks — just include the full clean passage text.
-- Remove (A)(B)(C) labels — merge into one continuous paragraph.
+- Extract ONLY the passage text. Copy WORD FOR WORD.
+- Remove ①②③④⑤ circle numbers from passage text.
+- Remove ____ blanks (fill with the correct word if known, otherwise remove).
+- Remove (A)(B)(C) labels and merge into one continuous paragraph.
+- NO question types, NO choices, NO annotations.
 
-JSON structure:
+Return this exact JSON:
 {
-  "slides": [
-    { "type": "cover", "data": { "title": "Lesson Title", "subtitle": "Grade/Unit" } },
-    { "type": "feedback", "data": { "title": "Micro Feedback", "items": ["지난 시간 배운 내용을 떠올려보세요.", "기억에 남는 단어나 표현이 있나요?", "오늘 수업에서 기대하는 것은?"] } },
-    { "type": "assignment-feedback", "data": { "title": "과제 피드백", "items": ["지난 과제에서 어려웠던 부분은?", "모범 답안과 비교해보세요.", "틀린 문제 유형을 다시 확인합시다."] } },
-    { "type": "common-qa", "data": { "title": "공통질문 풀이", "items": ["이 지문에서 어려운 어휘가 있었나요?", "주제문을 찾는 방법이 궁금한가요?"] } },
-    { "type": "objectives", "data": { "title": "학습 목표", "items": ["~을/를 이해할 수 있다.", "~을/를 설명할 수 있다."] } },
-    { "type": "passage", "data": { "title": "PASSAGE 1", "passage": { "text": "Full clean passage text here, no numbers, no blanks, no (A)(B)(C) labels.", "questionNumber": null, "questionType": "", "underlinedText": "" }, "choices": [] } },
-    { "type": "summary", "data": { "title": "오늘 배운 내용 정리", "items": ["한국어 요약1", "한국어 요약2"] } },
-    { "type": "micro-feedback", "data": { "title": "오늘 수업 되돌아보기", "items": ["오늘 배운 내용 중 기억에 남는 것은?", "어려웠던 부분은?", "이해도를 스스로 평가해보세요 (⭐~⭐⭐⭐⭐⭐)"] } }
+  "title": "Lesson title (e.g. 1학기 기말고사 대비)",
+  "subtitle": "Grade/Unit (e.g. 고2 · 모의고사)",
+  "objectives": ["~을 이해할 수 있다.", "~을 설명할 수 있다.", "~을 파악할 수 있다."],
+  "passages": [
+    { "title": "PASSAGE 1", "text": "Full clean passage text here." },
+    { "title": "PASSAGE 2", "text": "Full clean passage text here." }
   ]
-}
-
-IMPORTANT: One passage slide per passage. Include ALL passages. passage.text must be the FULL clean text.`,
+}`,
   });
 
   const response = await groq.chat.completions.create({
     model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     messages: [
-      { role: 'system', content: 'You are an English lesson slide creator for exam prep. Return ONLY valid JSON. Every slide MUST have "type" field.' },
+      { role: 'system', content: 'Extract passage texts exactly as written. Return ONLY valid JSON.' },
       { role: 'user', content },
     ],
     max_tokens: 8000,
@@ -244,13 +239,33 @@ IMPORTANT: One passage slide per passage. Include ALL passages. passage.text mus
     } catch { throw new Error('내신대비 슬라이드 생성 실패: JSON 파싱 오류'); }
   }
 
-  if (!parsed?.slides) throw new Error('내신대비 슬라이드 생성 실패');
+  if (!parsed?.passages) throw new Error('내신대비 슬라이드 생성 실패');
 
-  return parsed.slides.map((s: any, i: number) => {
-    const data = s.data && typeof s.data === 'object' && Object.keys(s.data).length > 0
-      ? s.data : (() => { const { type: _t, order: _o, ...rest } = s; return rest; })();
-    return { id: `slide-${i}`, projectId: '', order: i + 1, type: inferType(s), layout: 'title-content', data, approved: false };
+  // 고정 슬라이드 + AI 추출 지문 조합
+  const slides: SlideItem[] = [];
+  let idx = 0;
+  const mk = (type: SlideItem['type'], data: any): SlideItem => ({
+    id: `slide-${idx}`, projectId: '', order: ++idx, type, layout: 'title-content', data, approved: false,
   });
+
+  slides.push(mk('cover', { title: parsed.title || '내신대비 콘티', subtitle: parsed.subtitle || '' }));
+  slides.push(mk('feedback', { title: 'Micro Feedback', items: ['지난 시간에 배운 내용을 떠올려보세요.', '기억에 남는 단어나 표현이 있나요?', '오늘 수업에서 기대하는 것은 무엇인가요?'] }));
+  slides.push(mk('assignment-feedback', { title: '과제 피드백', items: ['지난 과제에서 많이 틀린 문제 유형은?', '어려웠던 어휘나 표현을 다시 확인해봅시다.', '모범 답안과 자신의 답을 비교해보세요.'] }));
+  slides.push(mk('common-qa', { title: '공통질문 풀이', items: ['지문에서 어려운 어휘가 있었나요?', '주제문을 찾는 방법이 궁금한 학생?'] }));
+  slides.push(mk('objectives', { title: '학습 목표', items: parsed.objectives || ['지문을 정확히 이해할 수 있다.', '핵심 어휘를 파악할 수 있다.', '글의 흐름을 파악할 수 있다.'] }));
+
+  for (const p of (parsed.passages || [])) {
+    slides.push(mk('passage', {
+      title: p.title || `PASSAGE ${idx}`,
+      passage: { text: p.text || '', questionNumber: null, questionType: '', underlinedText: '' },
+      choices: [],
+    }));
+  }
+
+  slides.push(mk('summary', { title: '오늘 배운 내용 정리', items: ['오늘 학습한 지문의 핵심 내용을 정리해봅시다.', '새로 배운 어휘와 표현을 복습합니다.'] }));
+  slides.push(mk('micro-feedback', { title: '오늘 수업 되돌아보기', items: ['오늘 배운 내용 중 기억에 남는 것은?', '어려웠던 부분은 무엇인가요?', '이해도를 스스로 평가해보세요 (⭐~⭐⭐⭐⭐⭐)'] }));
+
+  return slides;
 }
 
 // 타이틀 기반 타입 추론 (AI가 type 필드를 빠뜨릴 때 대비)
