@@ -7,11 +7,12 @@ interface SlideRendererProps {
   contiType?: string;
 }
 
-// 커버: 가로형 1080×600 / 지문: 세로형 600×1120 / 내신대비 지문: 가로형 1080×700 / 나머지: 세로형 600×840
+// 커버: 가로형 1080×600 / 지문: 세로형 840×1120 / 내신대비 지문: 가로형 780×700 / 나머지: 세로형 600×840
 export const COVER_W = 1080;
 export const COVER_H = 600;
 export const SLIDE_W = 600;
 export const SLIDE_H = 840;
+export const PASSAGE_W = 840;
 export const PASSAGE_H = 1120;
 export const NAESHIN_W = 780;
 export const NAESHIN_H = 700;
@@ -40,7 +41,8 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   const isWide = type === 'feedback' || type === 'assignment-feedback' || type === 'common-qa';
 
   const isNaeshinPassage = isPassage && contiType === '내신대비용';
-  const W = (isCover || isWide || isNaeshinPassage) ? (isNaeshinPassage ? NAESHIN_W : COVER_W) : SLIDE_W;
+  const isRegularPassage = isPassage && !isNaeshinPassage;
+  const W = (isCover || isWide) ? COVER_W : isNaeshinPassage ? NAESHIN_W : isRegularPassage ? PASSAGE_W : SLIDE_W;
   const H = (isCover || isWide) ? COVER_H : isNaeshinPassage ? NAESHIN_H : isPassage ? PASSAGE_H : SLIDE_H;
 
   const baseStyle: React.CSSProperties = {

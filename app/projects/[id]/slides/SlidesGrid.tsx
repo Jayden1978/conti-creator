@@ -45,9 +45,10 @@ export default function SlidesGrid({ slides: initialSlides, contiType }: SlidesG
             {(() => {
               const isWideSlide = ['cover','feedback','assignment-feedback','common-qa'].includes(slide.type);
               const isNaeshinPass = slide.type === 'passage' && contiType === '내신대비용';
-              const innerW = isWideSlide || isNaeshinPass ? 1080 : 600;
+              const isRegularPass = slide.type === 'passage' && !isNaeshinPass;
+              const innerW = isWideSlide ? 1080 : isNaeshinPass ? 780 : isRegularPass ? 840 : 600;
               const innerH = isWideSlide ? 600 : isNaeshinPass ? 700 : slide.type === 'passage' ? 1120 : 840;
-              const sc = (isWideSlide || isNaeshinPass) ? 0.303 : 0.333;
+              const sc = isWideSlide ? 0.303 : isNaeshinPass ? 0.303 : isRegularPass ? 0.280 : 0.333;
               const thumbH = Math.round(innerH * sc);
               return (
             <div
