@@ -141,6 +141,33 @@ async function extractPdfText(base64: string): Promise<string> {
   return data.text || '';
 }
 
+/**
+ * PDF base64 → 페이지별 PNG 이미지로 렌더링 (텍스트 레이어가 없는 스캔본 PDF용 폴백).
+ * pdf-parse가 빈 텍스트를 반환하는 스캔 PDF를 비전 모델(OCR)로 처리할 수 있게 변환한다.
+ */
+async function renderPdfPagesToImages(
+  base64: string,
+  maxPages = 6
+): Promise<{ base64: string; mediaType: string }[]> {
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const { createCanvas } = await import('@napi-rs/canvas');
+
+  const data = Buffer.from(base64, 'base64');
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(data) }).promise;
+  const numPages = Math.min(doc.numPages, maxPages);
+
+  const images: { base64: string; mediaType: string }[] = [];
+  for (let i = 1; i <= numPages; i++) {
+    const page = await doc.getPage(i);
+    const viewport = page.getViewport({ scale: 2.0 });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx as any, viewport, canvas: canvas as any }).promise;
+    images.push({ base64: canvas.toBuffer('image/png').toString('base64'), mediaType: 'image/png' });
+  }
+  return images;
+}
+
 const ANALYSIS_PROMPT = `You are analyzing English lesson material for a Korean English teacher.
 
 ==== ABSOLUTE RULES — NEVER VIOLATE ====
@@ -226,19 +253,44 @@ export async function analyzeLessonMaterial(
     throw new Error('파일을 업로드해주세요. JPG, PNG, PDF 형식을 지원합니다.');
   }
 
-  /* ── PDF 처리: 텍스트 추출 후 텍스트 전용 분석 ── */
+  /* ── PDF 처리: 텍스트 추출 후 텍스트 전용 분석 (텍스트 레이어 없는 스캔본은 이미지 렌더링 후 비전 처리) ── */
   if (pdfFiles.length > 0 && imageFiles.length === 0) {
     const texts: string[] = [];
+    const renderedImages: { base64: string; mediaType: string }[] = [];
+
     for (const f of pdfFiles) {
+      let extracted = '';
       try {
-        const t = await extractPdfText(f.base64);
-        if (t.trim()) texts.push(t.trim());
+        extracted = (await extractPdfText(f.base64)).trim();
       } catch (e) {
         console.error('extractPdfText failed:', e);
       }
+      if (extracted) {
+        texts.push(extracted);
+        continue;
+      }
+      // 텍스트 레이어가 없는 스캔본 PDF → 페이지를 이미지로 렌더링해 비전 모델로 처리
+      try {
+        const pages = await renderPdfPagesToImages(f.base64, 6 - renderedImages.length);
+        renderedImages.push(...pages);
+      } catch (e) {
+        console.error('renderPdfPagesToImages failed:', e);
+      }
     }
-    if (texts.length === 0) {
-      throw new Error('PDF 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원되지 않는 형식(예: 스캔된 이미지 PDF)일 수 있습니다. 다른 PDF로 다시 시도하거나 페이지를 JPG/PNG로 변환해 업로드해주세요.');
+
+    if (texts.length === 0 && renderedImages.length === 0) {
+      throw new Error('PDF 파일을 읽을 수 없습니다. 파일이 손상되었거나 지원되지 않는 형식일 수 있습니다. 다른 PDF로 다시 시도하거나 페이지를 JPG/PNG로 변환해 업로드해주세요.');
+    }
+
+    if (renderedImages.length > 0) {
+      const promptText = texts.length > 0
+        ? `Additional text from PDF:\n${texts.join('\n\n')}\n\n${ANALYSIS_PROMPT}`
+        : ANALYSIS_PROMPT;
+      return groqVision(
+        renderedImages,
+        promptText,
+        'You are an expert at extracting content from English lesson material images and text. Copy ALL reading passages EXACTLY as written. Never summarize. Never ask a clarifying question or refuse — always attempt extraction with whatever is given and mark missing fields as not provided.'
+      );
     }
 
     const combined = texts.join('\n\n--- 다음 파일 ---\n\n');
@@ -251,15 +303,26 @@ export async function analyzeLessonMaterial(
 
   /* ── 이미지 처리 (PDF 혼합 포함) ── */
   let promptText = ANALYSIS_PROMPT;
+  const renderedPdfImages: { base64: string; mediaType: string }[] = [];
 
-  // PDF가 함께 있으면 텍스트로 추가
+  // PDF가 함께 있으면 텍스트로 추가 (텍스트 레이어 없는 스캔본은 이미지로 렌더링)
   if (pdfFiles.length > 0) {
     const texts: string[] = [];
     for (const f of pdfFiles) {
+      let extracted = '';
       try {
-        const t = await extractPdfText(f.base64);
-        if (t.trim()) texts.push(t.trim());
-      } catch { /* 스캔 PDF면 무시하고 이미지로 처리 */ }
+        extracted = (await extractPdfText(f.base64)).trim();
+      } catch { /* 아래에서 이미지 렌더링 폴백 */ }
+      if (extracted) {
+        texts.push(extracted);
+      } else {
+        try {
+          const pages = await renderPdfPagesToImages(f.base64, 6 - imageFiles.length - renderedPdfImages.length);
+          renderedPdfImages.push(...pages);
+        } catch (e) {
+          console.error('renderPdfPagesToImages failed:', e);
+        }
+      }
     }
     if (texts.length > 0) {
       promptText = `Additional text from PDF:\n${texts.join('\n\n')}\n\n${ANALYSIS_PROMPT}`;
@@ -267,7 +330,7 @@ export async function analyzeLessonMaterial(
   }
 
   return groqVision(
-    imageFiles.slice(0, 6),
+    [...imageFiles, ...renderedPdfImages].slice(0, 6),
     promptText,
     'You are an expert at extracting content from English lesson material images and text. Copy ALL reading passages EXACTLY as written. Never summarize. Never ask a clarifying question or refuse — always attempt extraction with whatever is given and mark missing fields as not provided.'
   );
