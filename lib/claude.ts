@@ -44,7 +44,7 @@ async function groqVision(
             { role: 'user', content },
           ],
           max_tokens: 4000,
-          reasoning_format: 'hidden',
+          ...reasoningExtra(VISION_MODEL),
         });
         const text = response.choices[0].message.content || '';
         if (text.trim()) { pageResult = text; break; }
