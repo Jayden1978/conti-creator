@@ -151,6 +151,7 @@ const ANALYSIS_PROMPT = `You are analyzing English lesson material for a Korean 
 5. (A)(B)(C) sections (글의순서): MUST be preserved in the passage text.
 6. NEVER paraphrase, summarize, or rewrite any part of the passage.
 7. NEVER ask a clarifying question or request additional material, even if the given text contains ONLY the passages with no question stems/choices/underlined text visible. In that case, write "Not provided in the source" for the missing fields and immediately proceed to extract every passage that IS present. Your reply must ALWAYS start directly with "1. Grade/Level" (the requested output format below) — never with a conversational sentence, an apology, or a request for more information.
+8. A "PASSAGE" is defined by having its OWN exam question number and question type (목적/주제/제목/어법성판단/빈칸추론/etc). If the source material presents ONE reading passage broken across multiple lines labeled "문장 1", "문장 2", "Sentence 1", "①②③...", or similar sequential sentence labels — with NO separate question stem or answer choices between them — this is ONE passage split for line-by-line teaching, NOT multiple passages. MERGE all of these sentences IN ORDER into a SINGLE PASSAGE TEXT block (strip the "문장 N" labels, join the sentences into continuous prose), and emit only ONE "=== PASSAGE ===" entry for it. NEVER create a separate PASSAGE block per sentence.
 ===========================================
 
 HOW TO IDENTIFY QUESTION TYPE — READ THE QUESTION CAREFULLY:
