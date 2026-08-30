@@ -1,19 +1,28 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const body = await req.json();
+    const updateData: Record<string, unknown> = {};
+    if (body.approved !== undefined) updateData.approved = body.approved;
+    if (body.data !== undefined) updateData.data = JSON.stringify(body.data);
+    const slide = await prisma.slide.update({ where: { id }, data: updateData });
+    return NextResponse.json({ ...slide, data: JSON.parse(slide.data) });
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: 'DB error' }, { status: 500 });
+  }
+}
 
-    const slide = await prisma.slide.update({
-      where: { id },
-      data: { approved: body.approved },
-    });
-
-    return NextResponse.json(slide);
-  } catch (error) {
-    console.error('PATCH /api/slides/[id] error:', error);
-    return NextResponse.json({ error: '슬라이드 업데이트에 실패했습니다.' }, { status: 500 });
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    await prisma.slide.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: 'DB error' }, { status: 500 });
   }
 }

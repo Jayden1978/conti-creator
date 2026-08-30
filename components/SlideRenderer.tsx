@@ -12,18 +12,24 @@ export const COVER_W = 1080;
 export const COVER_H = 600;
 export const SLIDE_W = 600;
 export const SLIDE_H = 840;
-export const PASSAGE_W = 840;
-export const PASSAGE_H = 1120;
+export const PASSAGE_W = 640;
+export const PASSAGE_H = 800;
 export const NAESHIN_W = 780;
 export const NAESHIN_H = 700;
 
 // AI 응답이 객체로 올 수 있으므로 안전하게 문자열 변환
+function sanitize(s: string): string {
+  // 키릴 문자 등 깨진 문자 제거
+  return s.replace(/^#+\s*/, '').replace(/[Ѐ-ӿԀ-ԯ]/g, '').trim();
+}
+
 function str(val: any): string {
   if (val === null || val === undefined) return '';
-  if (typeof val === 'string') return val;
+  if (typeof val === 'string') return sanitize(val);
   if (typeof val === 'number') return String(val);
   if (typeof val === 'object') {
-    return val.content || val.text || val.word || val.meaning || val.statement || JSON.stringify(val);
+    const s = val.content || val.text || val.word || val.meaning || val.statement || JSON.stringify(val);
+    return typeof s === 'string' ? sanitize(s) : String(s);
   }
   return String(val);
 }
@@ -42,8 +48,58 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
 
   const isNaeshinPassage = isPassage && contiType === '내신대비용';
   const isRegularPassage = isPassage && !isNaeshinPassage;
-  const W = (isCover || isWide) ? COVER_W : isNaeshinPassage ? NAESHIN_W : isRegularPassage ? PASSAGE_W : SLIDE_W;
-  const H = (isCover || isWide) ? COVER_H : isNaeshinPassage ? NAESHIN_H : isPassage ? PASSAGE_H : SLIDE_H;
+
+  // 정규수업 지문: 텍스트 길이에 따라 높이 동적 계산
+  const passageTextForHeight = isRegularPassage ? str(data.passage?.text ?? (data as any).passage ?? '') : '';
+  const qTypeForHeight = isRegularPassage ? (data.passage?.questionType || (data as any).questionType || '') : '';
+  const isGrammarJudgeForHeight = /어법성|어법 판단|어법상/i.test(qTypeForHeight);
+  const dynamicPassageH = (() => {
+    const len = passageTextForHeight.length;
+    const lines = Math.ceil(len / 72); // 640px 너비 기준 한 줄 약 72자
+    // 어법성판단: "각 번호별 어법 포인트 써보기" 란을 위한 추가 높이
+    const extra = isGrammarJudgeForHeight ? 260 : 0;
+    const contentH = lines * 30 + 180 + extra;
+    const maxH = isGrammarJudgeForHeight ? PASSAGE_H + 260 : PASSAGE_H;
+    return Math.max(420, Math.min(maxH, contentH));
+  })();
+
+  // 꼬리질문(Lecture Note) 슬라이드: 항목·단계 수에 따라 높이 동적 계산
+  const isGrammarChain = type === 'grammar-chain';
+  const dynamicChainH = (() => {
+    if (!isGrammarChain) return SLIDE_H;
+    const chainQs = Array.isArray((data as any).chainQuestions) ? (data as any).chainQuestions : [];
+    const perItem = chainQs.reduce((sum: number, item: any) => {
+      const steps = Array.isArray(item.steps) ? item.steps.length : 0;
+      return sum + 46 + steps * 28 + 44 + 14;
+    }, 0);
+    return Math.max(500, 130 + perItem);
+  })();
+
+  // 한 줄 영어 지문: 문장 개수·길이에 따라 높이 동적 계산
+  const isLineEnglish = type === 'line-english';
+  const dynamicLineEnglishH = (() => {
+    if (!isLineEnglish) return NAESHIN_H;
+    const sentences = Array.isArray((data as any).lineEnglishSentences) ? (data as any).lineEnglishSentences : [];
+    const perItem = sentences.reduce((sum: number, s: any) => {
+      const lines = Math.ceil(String(s.text ?? '').length / 62);
+      return sum + Math.max(50, lines * 24 + 20) + 14;
+    }, 0);
+    return Math.max(NAESHIN_H, 130 + perItem);
+  })();
+
+  // 한 줄 영어 꼬리질문: 인용 문장 길이에 따라 높이 동적 계산
+  const isLineEnglishTail = type === 'line-english-tail';
+  const dynamicLineEnglishTailH = (() => {
+    if (!isLineEnglishTail) return NAESHIN_H;
+    const pair = (data as any).lineEnglishPair || {};
+    const prevLines = Math.ceil(String(pair.prevText ?? '').length / 58);
+    const nextLines = Math.ceil(String(pair.nextText ?? '').length / 58);
+    const quoteH = (prevLines * 22 + 30) + (nextLines * 22 + 30);
+    return Math.max(NAESHIN_H, 260 + quoteH);
+  })();
+
+  const W = (isCover || isWide) ? COVER_W : isNaeshinPassage ? NAESHIN_W : isRegularPassage ? PASSAGE_W : isGrammarChain ? PASSAGE_W : (isLineEnglish || isLineEnglishTail) ? NAESHIN_W : SLIDE_W;
+  const H = (isCover || isWide) ? COVER_H : isNaeshinPassage ? NAESHIN_H : isRegularPassage ? dynamicPassageH : isPassage ? PASSAGE_H : isGrammarChain ? dynamicChainH : isLineEnglish ? dynamicLineEnglishH : isLineEnglishTail ? dynamicLineEnglishTailH : SLIDE_H;
 
   const baseStyle: React.CSSProperties = {
     width: W,
@@ -59,7 +115,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   /* ── COVER (가로형 1080×600) ── */
   if (type === 'cover') {
     return (
-      <div style={{ ...baseStyle, background: 'linear-gradient(135deg, #0f0f0f 0%, #1e0e00 50%, #0f0f0f 100%)' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, background: 'linear-gradient(90deg, #F97316, #fb923c)' }} />
         <div style={{ position: 'absolute', top: -100, right: -100, width: 400, height: 400, borderRadius: '50%', background: 'rgba(249,115,22,0.07)' }} />
         <div style={{ position: 'absolute', bottom: -80, left: -80, width: 300, height: 300, borderRadius: '50%', background: 'rgba(249,115,22,0.04)' }} />
@@ -134,7 +190,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   /* ── FEEDBACK (커버와 동일한 840×600 가로형) ── */
   if (type === 'feedback') {
     return (
-      <div style={{ ...baseStyle, background: 'linear-gradient(135deg, #0d0d1a 0%, #12082a 50%, #0d0d1a 100%)' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         {/* 상단 그라데이션 바 */}
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, background: 'linear-gradient(90deg, #6366f1, #a855f7, #ec4899)' }} />
         {/* 배경 장식 원 */}
@@ -162,7 +218,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   /* ── ASSIGNMENT FEEDBACK (과제 피드백) — 가로형 1080×600, 제목만 ── */
   if (type === 'assignment-feedback') {
     return (
-      <div style={{ ...baseStyle, background: 'linear-gradient(135deg, #1a0e00 0%, #2d1800 50%, #1a0e00 100%)' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, background: 'linear-gradient(90deg, #f59e0b, #fbbf24)' }} />
         <div style={{ position: 'absolute', top: -120, right: -120, width: 420, height: 420, borderRadius: '50%', background: 'rgba(245,158,11,0.08)' }} />
         <div style={{ position: 'absolute', bottom: -80, left: -80, width: 300, height: 300, borderRadius: '50%', background: 'rgba(251,191,36,0.05)' }} />
@@ -186,7 +242,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   /* ── COMMON QA (공통질문 풀이) — 가로형 1080×600, 제목만 ── */
   if (type === 'common-qa') {
     return (
-      <div style={{ ...baseStyle, background: 'linear-gradient(135deg, #001a0e 0%, #00281a 50%, #001a0e 100%)' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, background: 'linear-gradient(90deg, #10b981, #34d399)' }} />
         <div style={{ position: 'absolute', top: -120, right: -120, width: 420, height: 420, borderRadius: '50%', background: 'rgba(16,185,129,0.08)' }} />
         <div style={{ position: 'absolute', bottom: -80, left: -80, width: 300, height: 300, borderRadius: '50%', background: 'rgba(52,211,153,0.05)' }} />
@@ -223,7 +279,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   /* ── OBJECTIVES ── */
   if (type === 'objectives') {
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#F97316' }} />
         <div style={{ padding: '44px 40px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
@@ -248,7 +304,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
     const vocab = Array.isArray(data.vocabulary) ? data.vocabulary : [];
 
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#F97316' }} />
         <div style={{ padding: '24px 24px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           {/* 헤더 */}
@@ -345,9 +401,13 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
     // 어휘 적절성도 ①②③④⑤ 인라인 형식 동일
     const isInlineCircle = isGrammarJudge || isVocabJudge;
 
+    // 어법성판단/어휘적절성: "(1)word" 같은 구식 마커를 ①②③④⑤ 유니코드로 정규화
+    const digitToCircle: Record<string, string> = { '1': '①', '2': '②', '3': '③', '4': '④', '5': '⑤' };
+    const normalizeMarkers = (t: string) => t.replace(/\((\d)\)/g, (m, d) => digitToCircle[d] ?? m);
+
     // 어법성판단: PDF 파싱으로 생긴 ____ 빈칸 제거 (방어 처리)
     const cleanedPassageText = isInlineCircle
-      ? passageText.replace(/_{2,}/g, '').replace(/\s{2,}/g, ' ').trim()
+      ? normalizeMarkers(passageText.replace(/_{2,}/g, '').replace(/\s{2,}/g, ' ').trim())
       : passageText;
 
     // 순서 배열: 제시문(인트로) + (A)(B)(C) 섹션 분리
@@ -406,9 +466,11 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
         if (['①','②','③','④','⑤'].includes(part)) {
           result.push(
             <span key={`num-${i}`} style={{
-              color: '#F97316', fontWeight: 800, fontSize: 15,
-              background: 'rgba(249,115,22,0.18)', borderRadius: 3, padding: '0 3px',
-              margin: '0 1px',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              color: '#F97316', fontWeight: 800, fontSize: 13,
+              width: 20, height: 20, boxSizing: 'border-box',
+              border: '1.5px solid #F97316', borderRadius: 4,
+              margin: '0 2px',
             }}>{part}</span>
           );
         } else {
@@ -432,9 +494,10 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
               result.push(
                 <span key={`ul-${i}`} style={{
                   textDecoration: 'underline',
-                  textDecorationColor: '#facc15',
+                  textDecorationColor: '#F97316',
                   textDecorationThickness: 2,
                   color: '#fff',
+                  fontWeight: 700,
                 }}>{underlined}</span>
               );
               result.push(<span key={`rest-${i}`}>{trailing}</span>);
@@ -557,17 +620,26 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
     const naeshinLineHeight = textLen < 400 ? 2.8 : textLen < 650 ? 2.6 : textLen < 900 ? 2.4 : 2.2;
 
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: '#F97316' }} />
-        <div style={{ padding: isNaeshin ? '20px 32px' : '28px 44px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', gap: isNaeshin ? 8 : 12 }}>
+      <div style={{ ...baseStyle, background: 'transparent', ...(isRegularPassage ? { height: 'auto', minHeight: 420 } : {}) }}>
+        <div style={{ height: 5, background: '#F97316', flexShrink: 0 }} />
+        <div style={{ padding: isNaeshin ? '20px 32px' : '28px 44px', ...(isNaeshin ? { height: '100%' } : {}), display: 'flex', flexDirection: 'column', boxSizing: 'border-box', gap: isNaeshin ? 8 : 12 }}>
 
           {/* 헤더 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <div style={{ width: 5, height: 26, background: '#F97316', borderRadius: 2 }} />
-            <h2 style={{ fontSize: 19, fontWeight: 700, color: '#fff' }}>{str(data.title) || 'Reading Passage'}</h2>
-            {qNum && <span style={{ fontSize: 11, background: 'rgba(249,115,22,0.15)', color: '#F97316', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(249,115,22,0.3)', fontWeight: 600 }}>{qNum}번</span>}
-            {qType && <span style={{ fontSize: 10, color: '#888', background: '#242424', padding: '2px 8px', borderRadius: 10, border: '1px solid #333' }}>{qType}</span>}
-          </div>
+          {isRegularPassage ? (
+            <div style={{ flexShrink: 0, textAlign: 'center' }}>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: '#F97316', lineHeight: 1.4, letterSpacing: 0.3, fontFamily: 'Georgia, "Times New Roman", serif' }}>
+                [ {str(data.title) || 'Reading Passage'}{data.passage?.source ? ` (${str(data.passage.source)})` : ''} ]
+              </h2>
+              {qType && <p style={{ fontSize: 11, color: '#888', marginTop: 6 }}>{qType}</p>}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              <div style={{ width: 5, height: 26, background: '#F97316', borderRadius: 2 }} />
+              <h2 style={{ fontSize: 19, fontWeight: 700, color: '#fff' }}>{str(data.title) || 'Reading Passage'}</h2>
+              {qNum && <span style={{ fontSize: 11, background: 'rgba(249,115,22,0.15)', color: '#F97316', padding: '2px 8px', borderRadius: 10, border: '1px solid rgba(249,115,22,0.3)', fontWeight: 600 }}>{qNum}번</span>}
+              {qType && <span style={{ fontSize: 10, color: '#888', background: '#242424', padding: '2px 8px', borderRadius: 10, border: '1px solid #333' }}>{qType}</span>}
+            </div>
+          )}
 
           {isOrdering ? (
             /* ── 순서 배열: 제시문 박스 + (A)(B)(C) 섹션 + 보기 ── */
@@ -594,7 +666,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
             </>
           ) : (
             /* ── 일반 지문: 지문 + 보기를 하나의 flex 컨테이너에 묶어 보기가 지문 바로 아래 오도록 ── */
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: isNaeshin ? 0 : 10, overflow: 'hidden' }}>
+            <div style={{ flex: isNaeshin ? 1 : undefined, display: 'flex', flexDirection: 'column', gap: isNaeshin ? 0 : 10, overflow: isNaeshin ? 'hidden' : 'visible' }}>
               <div style={{
                 flex: isNaeshin ? 1 : undefined,
                 flexShrink: isNaeshin ? undefined : 0,
@@ -638,7 +710,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
                   fontSize: isNaeshin ? naeshinFontSize : 14,
                   color: '#e0e0e0',
                   lineHeight: isNaeshin ? naeshinLineHeight : 2.0,
-                  whiteSpace: 'pre-wrap',
+                  whiteSpace: isNaeshin ? 'pre-wrap' : 'normal',
                   textAlign: 'justify',
                   wordBreak: 'break-word',
                   ...passageFont,
@@ -649,12 +721,31 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
                       ? renderWithUnderline(passageText, underlinedText)
                       : passageText}
                 </div>
-                {data.passage?.source && (
+                {isNaeshin && data.passage?.source && (
                   <p style={{ fontSize: 11, color: '#555', marginTop: 10, textAlign: 'right' }}>— {str(data.passage.source)}</p>
                 )}
               </div>
               {/* 보기: 내신대비 모드에서는 숨김 */}
               {!isNaeshin && choicesBlock}
+              {/* 어법성판단: 번호별 어법 포인트 써보기 란 */}
+              {!isNaeshin && isGrammarJudge && !isAbcColumnFormat && (
+                <div style={{ flexShrink: 0, padding: '14px 18px', background: '#1e1e1e', borderRadius: 10, border: '1px solid #2a2a2a' }}>
+                  <p style={{ fontSize: 12, color: '#999', marginBottom: 10 }}>각 번호에 대해 무엇을 물어보는 어법 포인트인지 써보세요</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {['①','②','③','④','⑤'].map((num) => (
+                      <div key={num} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{
+                          width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                          border: '1px solid #555', color: '#888',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 11,
+                        }}>{num}</span>
+                        <div style={{ flex: 1, borderBottom: '1px solid #444', height: 16 }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -667,7 +758,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   if (type === 'grammar-quiz') {
     const gqs = Array.isArray((data as any).grammarQuestions) ? (data as any).grammarQuestions : [];
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: 'linear-gradient(90deg,#3b82f6,#06b6d4)' }} />
         <div style={{ padding: '32px 30px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           {/* 헤더 */}
@@ -732,7 +823,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   if (type === 'grammar-answer') {
     const gqs = Array.isArray((data as any).grammarQuestions) ? (data as any).grammarQuestions : [];
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: 'linear-gradient(90deg,#0ea5e9,#22d3ee)' }} />
         <div style={{ padding: '32px 30px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           {/* 헤더 */}
@@ -810,10 +901,79 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
     );
   }
 
+  /* ── GRAMMAR CHAIN (Lecture Note · 꼬리질문 활동) ── */
+  if (type === 'grammar-chain') {
+    const chainQs = Array.isArray((data as any).chainQuestions) ? (data as any).chainQuestions : [];
+    const circleNumsChain = ['①','②','③','④','⑤'];
+    return (
+      <div style={{ ...baseStyle, background: 'transparent' }}>
+        <div style={{ padding: '26px 28px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', gap: 16 }}>
+          {/* Lecture Note 배지 + 제목 */}
+          <div style={{ flexShrink: 0 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 11, fontWeight: 700, color: '#c4b5fd',
+              background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)',
+              padding: '4px 12px', borderRadius: 20,
+            }}>
+              Lecture Note · 꼬리질문
+            </span>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginTop: 10, lineHeight: 1.4 }}>
+              {str(data.title) || '꼬리질문 활동'}
+            </h2>
+          </div>
+
+          {/* 항목별 카드 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
+            {chainQs.map((item: any, i: number) => {
+              const numLabel = circleNumsChain[i] ?? String(item.number ?? i + 1);
+              const steps: string[] = Array.isArray(item.steps) ? item.steps.map(str) : [];
+              return (
+                <div key={i} style={{ padding: '13px 15px', background: '#1e1e1e', borderRadius: 10, border: '1px solid #2a2a2a' }}>
+                  {/* 헤더: 번호 + 밑줄 대상 + 태그 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
+                    <span style={{
+                      width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                      background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)',
+                      color: '#F97316', fontWeight: 700, fontSize: 11,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>{numLabel}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{str(item.label)}</span>
+                    {item.tag && (
+                      <span style={{ marginLeft: 'auto', fontSize: 10, color: '#ccc', background: '#2a2a2a', border: '1px solid #3a3a3a', padding: '2px 9px', borderRadius: 12, whiteSpace: 'nowrap' }}>
+                        {str(item.tag)}
+                      </span>
+                    )}
+                  </div>
+                  {/* 단계별 꼬리질문 (빈칸 포함) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 9 }}>
+                    {steps.map((step, si) => (
+                      <div key={si} style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                        <span style={{
+                          width: 15, height: 15, borderRadius: '50%', flexShrink: 0,
+                          background: 'rgba(96,165,250,0.15)', color: '#60a5fa',
+                          fontSize: 9, fontWeight: 700,
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          transform: 'translateY(1px)',
+                        }}>{si + 1}</span>
+                        <span style={{ fontSize: 12, color: '#ccc', lineHeight: 1.6, flexShrink: 0 }}>{step} →</span>
+                        <span style={{ flex: 1, minWidth: 24, borderBottom: '1px solid #444', height: 13 }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ── GRAMMAR ── */
   if (type === 'grammar') {
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#F97316' }} />
         <div style={{ padding: '36px 32px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
@@ -841,7 +1001,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   /* ── EXERCISE ── */
   if (type === 'exercise') {
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#F97316' }} />
         <div style={{ padding: '36px 32px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
@@ -878,7 +1038,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   if (type === 'ox-quiz') {
     const oxQs = Array.isArray((data as any).oxQuestions) ? (data as any).oxQuestions : [];
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#a855f7' }} />
         <div style={{ padding: '36px 32px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 22 }}>
@@ -925,7 +1085,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   if (type === 'ox-answer') {
     const oxQs = Array.isArray((data as any).oxQuestions) ? (data as any).oxQuestions : [];
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#f59e0b' }} />
         <div style={{ padding: '36px 32px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 22 }}>
@@ -983,7 +1143,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   /* ── SUMMARY ── */
   if (type === 'summary') {
     return (
-      <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#22c55e' }} />
         <div style={{ padding: '40px 36px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 30 }}>
@@ -1006,7 +1166,7 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
   /* ── MICRO-FEEDBACK ── */
   if (type === 'micro-feedback') {
     return (
-      <div style={{ ...baseStyle, background: 'linear-gradient(160deg, #1a1a1a 0%, #0a1a2a 100%)' }}>
+      <div style={{ ...baseStyle, background: 'transparent' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#3b82f6' }} />
         <div style={{ padding: '40px 36px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 30 }}>
@@ -1025,9 +1185,196 @@ export default function SlideRenderer({ slide, scale = 1, contiType }: SlideRend
     );
   }
 
+  /* ── READING-ACTIVITY (내신대비용 독해활동) ── */
+  if (type === 'reading-activity') {
+    const mainQ = str(data.mainQuestion) || '';
+    const subQs = Array.isArray(data.subQuestions) ? data.subQuestions.map(str) : [];
+    const BOX_W = 180;
+    const BOX_H = 110;
+    return (
+      <div style={{ ...baseStyle, background: 'transparent', width: NAESHIN_W, height: NAESHIN_H }}>
+        {/* 상단 주황 라인 */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#F97316' }} />
+
+        <div style={{ padding: '28px 32px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* 제목 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 4, height: 22, background: '#F97316', borderRadius: 2 }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#F97316', letterSpacing: 1 }}>
+              {str(data.title) || '독해 활동'}
+            </span>
+          </div>
+
+          {/* 메인 질문 행 */}
+          {mainQ && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+              {/* 빈 박스 */}
+              <div style={{
+                width: BOX_W, height: BOX_H, flexShrink: 0,
+                border: '2.5px solid #FFD700', borderRadius: 6, background: 'transparent',
+              }} />
+              {/* 연결선 */}
+              <div style={{ width: 32, height: 2, background: '#FFD700', opacity: 0.6, flexShrink: 0 }} />
+              {/* 질문 */}
+              <p style={{ fontSize: 17, fontWeight: 700, color: '#F97316', lineHeight: 1.5, flex: 1 }}>
+                {mainQ}
+              </p>
+            </div>
+          )}
+
+          {/* 구분선 */}
+          <div style={{ height: 1, background: '#2a2a2a' }} />
+
+          {/* 서브 질문들 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
+            {subQs.map((q, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                {/* 빈 박스 */}
+                <div style={{
+                  width: BOX_W, height: BOX_H, flexShrink: 0,
+                  border: '2.5px solid #FFD700', borderRadius: 6, background: 'transparent',
+                  position: 'relative',
+                }}>
+                  <span style={{ position: 'absolute', top: 6, left: 8, fontSize: 11, color: '#FFD700', opacity: 0.7, fontWeight: 700 }}>
+                    Q{i + 1}
+                  </span>
+                </div>
+                {/* 연결선 */}
+                <div style={{ width: 32, height: 2, background: '#FFD700', opacity: 0.5, flexShrink: 0 }} />
+                {/* 질문 */}
+                <p style={{ fontSize: 15, fontWeight: 600, color: '#F97316', lineHeight: 1.55, flex: 1 }}>
+                  {q}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── READING-ANSWER (내신대비용 독해 정답) ── */
+  if (type === 'reading-answer') {
+    const qs = Array.isArray(data.subQuestions) ? data.subQuestions.map(str) : [];
+    const answers = Array.isArray(data.answers) ? data.answers.map(str) : [];
+    return (
+      <div style={{ ...baseStyle, background: 'transparent', width: NAESHIN_W, height: NAESHIN_H }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#F97316' }} />
+        <div style={{ padding: '28px 32px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 4, height: 22, background: '#F97316', borderRadius: 2 }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#F97316', letterSpacing: 1 }}>
+              {str(data.title) || '독해 정답'}
+            </span>
+            <span style={{ marginLeft: 4, fontSize: 12, background: 'rgba(249,115,22,0.15)', color: '#F97316', padding: '2px 10px', borderRadius: 20, border: '1px solid rgba(249,115,22,0.3)' }}>정답지</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+            {qs.map((q, i) => (
+              <div key={i} style={{
+                padding: '10px 16px',
+                background: '#242424',
+                borderRadius: 9,
+                border: '1px solid rgba(255,215,0,0.2)',
+                display: 'flex', gap: 12, alignItems: 'flex-start',
+              }}>
+                <span style={{
+                  width: 26, height: 26, borderRadius: 7, flexShrink: 0,
+                  background: 'rgba(255,215,0,0.15)', color: '#FFD700',
+                  border: '1.5px solid #FFD700',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 13, fontWeight: 700,
+                }}>{i + 1}</span>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 13, color: '#aaa', lineHeight: 1.5, marginBottom: 4 }}>{q}</p>
+                  <p style={{ fontSize: 14, color: '#F97316', fontWeight: 600, lineHeight: 1.5 }}>{answers[i] ?? ''}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── LINE-ENGLISH (한 줄 영어 · 문장 단위 지문) ── */
+  if (type === 'line-english') {
+    const sentences = Array.isArray((data as any).lineEnglishSentences) ? (data as any).lineEnglishSentences : [];
+    return (
+      <div style={{ ...baseStyle, background: 'transparent', width: NAESHIN_W, height: dynamicLineEnglishH }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#F97316' }} />
+        <div style={{ padding: '28px 32px', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 4, height: 22, background: '#F97316', borderRadius: 2 }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: '#F97316', letterSpacing: 1 }}>
+              {str(data.title) || '한 줄 영어'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+            {sentences.map((s: any, i: number) => (
+              <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '11px 15px', background: '#242424', borderRadius: 9, border: '1px solid #333' }}>
+                <span style={{
+                  width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                  background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.4)',
+                  color: '#F97316', fontWeight: 700, fontSize: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>{s.number ?? i + 1}</span>
+                <p style={{ fontSize: 14, color: '#e5e5e5', lineHeight: 1.65, flex: 1 }}>{str(s.text)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── LINE-ENGLISH-TAIL (한 줄 영어 · 꼬리질문) ── */
+  if (type === 'line-english-tail') {
+    const pair = (data as any).lineEnglishPair || {};
+    return (
+      <div style={{ ...baseStyle, background: 'transparent', width: NAESHIN_W, height: dynamicLineEnglishTailH }}>
+        <div style={{ padding: '26px 28px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', gap: 16 }}>
+          <div style={{ flexShrink: 0 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 11, fontWeight: 700, color: '#c4b5fd',
+              background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)',
+              padding: '4px 12px', borderRadius: 20,
+            }}>
+              Lecture Note · 꼬리질문 {pair.index ?? 1}/{pair.total ?? 1}
+            </span>
+            <h2 style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginTop: 10, lineHeight: 1.4 }}>
+              문장 {pair.prevNumber ?? ''} → 문장 {pair.nextNumber ?? ''}
+            </h2>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ padding: '12px 16px', background: '#242424', borderRadius: 9, border: '1px solid #333', borderLeft: '3px solid #F97316' }}>
+              <p style={{ fontSize: 13.5, color: '#ccc', lineHeight: 1.6 }}>&ldquo;{str(pair.prevText)}&rdquo;</p>
+            </div>
+            <div style={{ padding: '12px 16px', background: '#242424', borderRadius: 9, border: '1px solid #333', borderLeft: '3px solid #F97316' }}>
+              <p style={{ fontSize: 13.5, color: '#ccc', lineHeight: 1.6 }}>&ldquo;{str(pair.nextText)}&rdquo;</p>
+            </div>
+          </div>
+
+          <div style={{ padding: '13px 16px', background: 'rgba(139,92,246,0.1)', borderRadius: 9, border: '1px solid rgba(139,92,246,0.3)' }}>
+            <p style={{ fontSize: 13.5, color: '#c4b5fd', fontWeight: 600, lineHeight: 1.6 }}>
+              두 문장을 이어주는 표현(연결어·지시어 등)이 있다면 찾아 표시하고, 어떤 관계인지 한 문장으로 설명해 보세요.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+            {[0, 1, 2].map((i) => (
+              <div key={i} style={{ borderBottom: '1.5px solid #3a3a3a', height: 30 }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ── CUSTOM / FALLBACK ── */
   return (
-    <div style={{ ...baseStyle, background: '#1a1a1a' }}>
+    <div style={{ ...baseStyle, background: 'transparent' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: '#F97316' }} />
       <div style={{ padding: '40px 36px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>

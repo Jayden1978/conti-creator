@@ -15,10 +15,13 @@ function colorDist(r1: number, g1: number, b1: number, r2: number, g2: number, b
 
 export default function BgRemovedImage({ src, style, alt = '', tolerance = 40 }: Props) {
   const [result, setResult] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    setFailed(false);
     const img = new Image();
     img.crossOrigin = 'anonymous';
+    img.onerror = () => setFailed(true);
     img.onload = () => {
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth;
@@ -81,6 +84,8 @@ export default function BgRemovedImage({ src, style, alt = '', tolerance = 40 }:
     };
     img.src = src;
   }, [src, tolerance]);
+
+  if (failed) return null;
 
   // 처리 전: 원본 표시 (깜빡임 방지)
   return (

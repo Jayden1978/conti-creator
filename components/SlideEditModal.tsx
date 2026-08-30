@@ -57,13 +57,18 @@ export default function SlideEditModal({ slide, onClose, onUpdated }: SlideEditM
       });
       const data = await res.json();
 
+      if (!res.ok) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: data.error ? `오류가 발생했습니다: ${data.error}` : '오류가 발생했습니다. 다시 시도해주세요.' }]);
+        return;
+      }
+
       if (data.updatedData) {
         const updated = { ...currentSlide, data: data.updatedData };
         setCurrentSlide(updated);
         onUpdated(updated);
       }
 
-      setMessages((prev) => [...prev, { role: 'assistant', content: data.reply || '수정되었습니다.' }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: data.reply || '요청을 처리했지만 별도로 알려드릴 변경 사항은 없어요.' }]);
     } catch {
       setMessages((prev) => [...prev, { role: 'assistant', content: '오류가 발생했습니다. 다시 시도해주세요.' }]);
     } finally {

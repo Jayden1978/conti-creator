@@ -1,182 +1,212 @@
 'use client';
 
-import { useState, use } from 'react';
+import { useState, useEffect, use, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import StepProgress from '@/components/StepProgress';
-import UploadZone from '@/components/UploadZone';
 
-interface AnalyzePageProps {
-  params: Promise<{ id: string }>;
-}
-
-async function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.split(',')[1]);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-export default function AnalyzePage({ params }: AnalyzePageProps) {
+export default function AnalyzePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-
-  const [files, setFiles] = useState<File[]>([]);
+  const [content, setContent] = useState('');
+  const [fileData, setFileData] = useState<{ type: 'image' | 'pdf'; base64: string; mediaType: string } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [analysis, setAnalysis] = useState('');
-  const [error, setError] = useState('');
+  const [analysisResult, setAnalysisResult] = useState('');
+  const [project, setProject] = useState<{ name: string; grade: string; topic: string; contiType: string } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [fileName, setFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch(`/api/projects/${id}`)
+      .then(r => r.json())
+      .then(p => {
+        setProject(p);
+        if (p.analysis) setAnalysisResult(p.analysis);
+        if (p.status === 'slides') router.push(`/projects/${id}/slides`);
+      });
+  }, [id, router]);
+
+  const readFile = useCallback((file: File) => {
+    setFileName(file.name);
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const reader = new FileReader();
+
+    if (ext === 'txt' || ext === 'text') {
+      reader.onload = e => {
+        setContent(e.target?.result as string ?? '');
+        setFileData(null);
+      };
+      reader.readAsText(file, 'utf-8');
+    } else if (ext === 'pdf') {
+      reader.onload = e => {
+        const base64 = (e.target?.result as string).split(',')[1];
+        setFileData({ type: 'pdf', base64, mediaType: 'application/pdf' });
+        setContent('__pdf__');
+      };
+      reader.readAsDataURL(file);
+    } else if (['jpg', 'jpeg', 'png', 'webp'].includes(ext ?? '')) {
+      reader.onload = e => {
+        const dataUrl = e.target?.result as string;
+        const base64 = dataUrl.split(',')[1];
+        const mediaType = file.type;
+        setFileData({ type: 'image', base64, mediaType });
+        setContent('__image__');
+      };
+      reader.readAsDataURL(file);
+    } else {
+      alert('지원 형식: .txt, .pdf, .jpg, .png');
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) readFile(file);
+  }, [readFile]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) readFile(file);
+  };
 
   const handleAnalyze = async () => {
-    if (files.length === 0) {
-      setError('분석할 파일을 업로드해주세요.');
-      return;
-    }
+    if (!content && !fileData) return alert('지문을 입력하거나 파일을 업로드해주세요.');
     setAnalyzing(true);
-    setError('');
     try {
-      const formData = new FormData();
-      formData.append('projectId', id);
-      files.forEach((file) => formData.append('files', file));
-
-      const res = await fetch('/api/analyze', { method: 'POST', body: formData });
+      const body = fileData
+        ? { projectId: id, files: [fileData] }
+        : { projectId: id, content };
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '분석 실패');
-      setAnalysis(data.analysis);
-    } catch (e: any) {
-      setError(e?.message || '분석 중 오류가 발생했습니다. 다시 시도해주세요.');
+      if (data.error) throw new Error(data.error);
+      setAnalysisResult(data.analysis);
+    } catch (err) {
+      alert('분석 중 오류가 발생했습니다: ' + err);
     } finally {
       setAnalyzing(false);
     }
   };
 
-  const handleGenerateSlides = async () => {
-    if (!analysis) return;
+  const handleGenerate = async () => {
     setGenerating(true);
-    setError('');
     try {
-      const fileData = await Promise.all(
-        files.map(async (file) => ({
-          type: file.type === 'application/pdf' ? 'pdf' as const : 'image' as const,
-          base64: await fileToBase64(file),
-          mediaType: file.type,
-        }))
-      );
-
       const res = await fetch('/api/generate-slides', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: id, analysis, files: fileData }),
+        body: JSON.stringify({ projectId: id }),
       });
-      const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || '슬라이드 생성 실패');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
       router.push(`/projects/${id}/slides`);
-    } catch (e: any) {
-      setError(e?.message || '슬라이드 생성 중 오류가 발생했습니다.');
+    } catch (err) {
+      alert('슬라이드 생성 중 오류가 발생했습니다: ' + err);
       setGenerating(false);
     }
   };
 
+  const cardStyle = { background: '#242424', border: '1px solid #333' };
+  const inputStyle = { background: '#2a2a2a', border: '1px solid #444' };
+
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
-      <div className="mb-2">
-        <Link href="/" className="text-sm text-gray-500 hover:text-gray-300 flex items-center gap-1 transition-colors">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          대시보드
-        </Link>
-      </div>
-
-      <StepProgress currentStep={1} />
-
-      <div className="flex flex-col gap-6">
-        {/* Upload zone */}
-        <div className="rounded-xl p-6" style={{ background: '#242424', border: '1px solid #333' }}>
-          <h2 className="text-base font-semibold text-white mb-4">수업 자료 업로드</h2>
-          <UploadZone onFilesChange={setFiles} files={files} />
-        </div>
-
-        {error && (
-          <div className="px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>
-            {error}
+    <div className="min-h-screen" style={{ background: '#1a1a1a' }}>
+      <div className="max-w-4xl mx-auto p-6">
+        <StepProgress currentStep={1} />
+        {project && (
+          <div className="mb-4">
+            <h1 className="text-2xl font-bold text-white">{project.name}</h1>
+            <p className="text-gray-400 text-sm">{project.grade} · {project.topic} · {project.contiType}</p>
           </div>
         )}
 
-        {/* Analyze button */}
-        {!analysis && (
+        <div className="rounded-2xl p-6 mb-6" style={cardStyle}>
+          <h2 className="text-lg font-semibold text-white mb-4">지문 업로드</h2>
+
+          {/* 드래그 앤 드롭 영역 */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className="rounded-xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all mb-4"
+            style={{
+              border: `2px dashed ${dragging ? '#F97316' : '#555'}`,
+              background: dragging ? 'rgba(249,115,22,0.08)' : '#1e1e1e',
+              minHeight: 160,
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.text,.pdf,.jpg,.jpeg,.png"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <svg className="w-10 h-10" style={{ color: dragging ? '#F97316' : '#666' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            {fileName ? (
+              <div className="text-center">
+                <p className="text-orange-400 font-medium">{fileName}</p>
+                <p className="text-gray-500 text-sm mt-1">다른 파일로 교체하려면 클릭하세요</p>
+              </div>
+            ) : (
+              <div className="text-center">
+                <p className="text-gray-300 font-medium">파일을 여기에 드래그하거나 클릭해서 선택</p>
+                <p className="text-gray-500 text-sm mt-1">지원 형식: .txt, .pdf, .jpg, .png</p>
+              </div>
+            )}
+          </div>
+
+          {/* 직접 입력 */}
+          <details className="mb-4">
+            <summary className="text-sm text-gray-400 cursor-pointer hover:text-gray-200 transition select-none">
+              또는 직접 붙여넣기
+            </summary>
+            <textarea
+              value={content}
+              onChange={e => { setContent(e.target.value); setFileName(''); }}
+              placeholder="분석할 영어 지문을 여기에 붙여넣으세요..."
+              className="w-full h-48 rounded-lg p-4 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-orange-500 text-gray-200 placeholder-gray-600 mt-3"
+              style={inputStyle}
+            />
+          </details>
+
+          {(content && !['__pdf__', '__image__'].includes(content)) && (
+            <p className="text-xs text-gray-500 mb-3">
+              {content.length.toLocaleString()}자 로드됨
+            </p>
+          )}
+
           <button
             onClick={handleAnalyze}
-            disabled={analyzing || files.length === 0}
-            className="w-full py-3.5 rounded-lg font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            style={{ background: '#F97316', color: '#fff' }}
+            disabled={analyzing || (!content && !fileData)}
+            className="text-white px-6 py-2.5 rounded-lg font-medium transition disabled:opacity-40 hover:opacity-90"
+            style={{ background: '#F97316' }}
           >
-            {analyzing ? (
-              <>
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Claude AI가 분석 중... (최대 1-2분 소요)
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                AI로 분석 시작
-              </>
-            )}
+            {analyzing ? '분석 중...' : '지문 분석 시작'}
           </button>
-        )}
+        </div>
 
-        {/* Analysis result */}
-        {analysis && (
-          <div className="rounded-xl p-6 flex flex-col gap-4" style={{ background: '#242424', border: '1px solid #333' }}>
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5" style={{ color: '#22c55e' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <h2 className="text-base font-semibold text-white">분석 결과</h2>
-            </div>
-            <div
-              className="rounded-lg p-4 text-sm leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto"
-              style={{ background: '#1a1a1a', color: '#ccc', border: '1px solid #2a2a2a' }}
+        {analysisResult && (
+          <div className="rounded-2xl p-6 mb-6" style={cardStyle}>
+            <h2 className="text-lg font-semibold text-white mb-3">분석 결과</h2>
+            <pre className="text-sm text-gray-300 whitespace-pre-wrap rounded-lg p-4 max-h-80 overflow-y-auto" style={{ background: '#1a1a1a' }}>
+              {analysisResult}
+            </pre>
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="mt-4 text-white px-6 py-2.5 rounded-lg font-medium transition disabled:opacity-40 hover:opacity-90"
+              style={{ background: '#22c55e' }}
             >
-              {analysis}
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setAnalysis('')}
-                className="flex-1 py-3 rounded-lg font-medium text-sm transition-all hover:opacity-80"
-                style={{ background: '#333', color: '#aaa' }}
-              >
-                다시 분석
-              </button>
-              <button
-                onClick={handleGenerateSlides}
-                disabled={generating}
-                className="flex-1 py-3 rounded-lg font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                style={{ background: '#F97316', color: '#fff' }}
-              >
-                {generating ? (
-                  <>
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    슬라이드 생성 중...
-                  </>
-                ) : (
-                  '슬라이드 생성 →'
-                )}
-              </button>
-            </div>
+              {generating ? '슬라이드 생성 중...' : '슬라이드 생성'}
+            </button>
           </div>
         )}
       </div>

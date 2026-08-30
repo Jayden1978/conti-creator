@@ -1,82 +1,53 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
+import { redirect } from 'next/navigation';
+import Link from 'next/link';
+import SlidesGrid from './SlidesGrid';
 import StepProgress from '@/components/StepProgress';
 import type { SlideItem } from '@/lib/types';
-import SlidesGrid from './SlidesGrid';
 
-interface SlidesPageProps {
-  params: Promise<{ id: string }>;
-}
-
-export const dynamic = 'force-dynamic';
-
-export default async function SlidesPage({ params }: SlidesPageProps) {
+export default async function SlidesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-
   const project = await prisma.project.findUnique({
     where: { id },
     include: { slides: { orderBy: { order: 'asc' } } },
   });
+  if (!project) redirect('/');
 
-  if (!project) notFound();
-
-  const slides: SlideItem[] = project.slides.map((s) => ({
-    id: s.id,
-    projectId: s.projectId,
-    order: s.order,
+  const slides: SlideItem[] = project.slides.map(s => ({
+    ...s,
+    data: JSON.parse(s.data),
     type: s.type as SlideItem['type'],
     layout: s.layout as SlideItem['layout'],
-    data: JSON.parse(s.data),
-    approved: s.approved,
   }));
 
-  const approvedCount = slides.filter((s) => s.approved).length;
-
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
-      <div className="mb-2">
-        <Link href="/" className="text-sm text-gray-500 hover:text-gray-300 flex items-center gap-1 transition-colors">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          대시보드
-        </Link>
-      </div>
-
-      <StepProgress currentStep={2} />
-
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-white">{project.name}</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {slides.length}개 슬라이드 · 승인됨 {approvedCount}개
-          </p>
+    <div className="min-h-screen" style={{ background: '#1a1a1a' }}>
+      <div className="max-w-7xl mx-auto p-6">
+        <StepProgress currentStep={2} />
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white">{project.name}</h1>
+            <p className="text-gray-400 text-sm">{project.grade} · {project.topic} · {project.contiType} · 슬라이드 {slides.length}장</p>
+          </div>
+          <div className="flex gap-3">
+            <Link
+              href={`/projects/${id}/analyze`}
+              className="text-gray-300 px-4 py-2 rounded-lg hover:text-white transition text-sm"
+              style={{ border: '1px solid #444', background: '#2a2a2a' }}
+            >
+              다시 분석
+            </Link>
+            <Link
+              href={`/projects/${id}/export`}
+              className="text-white px-4 py-2 rounded-lg hover:opacity-90 transition text-sm"
+              style={{ background: '#7c3aed' }}
+            >
+              내보내기
+            </Link>
+          </div>
         </div>
-        <Link
-          href={`/projects/${id}/export`}
-          className="px-5 py-2.5 rounded-lg font-semibold text-sm transition-all hover:opacity-90 flex items-center gap-2"
-          style={{ background: '#F97316', color: '#fff' }}
-        >
-          내보내기로 이동 →
-        </Link>
+        <SlidesGrid slides={slides} contiType={project.contiType} projectId={id} />
       </div>
-
-      {slides.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-4">
-          <p className="text-gray-400">슬라이드가 없습니다.</p>
-          <Link
-            href={`/projects/${id}/analyze`}
-            className="px-5 py-2.5 rounded-lg font-medium text-sm"
-            style={{ background: '#333', color: '#aaa' }}
-          >
-            분석 단계로 돌아가기
-          </Link>
-        </div>
-      ) : (
-        <SlidesGrid slides={slides} contiType={(project as any).contiType || '정규수업용'} />
-      )}
     </div>
   );
 }

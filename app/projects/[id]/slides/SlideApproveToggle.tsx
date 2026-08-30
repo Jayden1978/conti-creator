@@ -1,54 +1,31 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
-interface SlideApproveToggleProps {
-  slideId: string;
-  approved: boolean;
-}
-
-export default function SlideApproveToggle({ slideId, approved: initialApproved }: SlideApproveToggleProps) {
-  const [approved, setApproved] = useState(initialApproved);
-  const [isPending, startTransition] = useTransition();
-  const router = useRouter();
+export default function SlideApproveToggle({ slideId, approved: initial }: { slideId: string; approved: boolean }) {
+  const [approved, setApproved] = useState(initial);
+  const [loading, setLoading] = useState(false);
 
   const toggle = async () => {
-    const newValue = !approved;
-    setApproved(newValue);
-    try {
-      await fetch(`/api/slides/${slideId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved: newValue }),
-      });
-      startTransition(() => router.refresh());
-    } catch {
-      setApproved(!newValue);
-    }
+    setLoading(true);
+    const res = await fetch(`/api/slides/${slideId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: !approved }),
+    });
+    if (res.ok) setApproved(a => !a);
+    setLoading(false);
   };
 
   return (
     <button
       onClick={toggle}
-      disabled={isPending}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
-      style={{
-        background: approved ? 'rgba(34,197,94,0.15)' : '#333',
-        color: approved ? '#22c55e' : '#888',
-        border: `1px solid ${approved ? 'rgba(34,197,94,0.3)' : '#444'}`,
-      }}
+      disabled={loading}
+      className={`text-xs px-3 py-1 rounded-full font-medium transition ${
+        approved ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-gray-100 text-gray-500 border border-gray-300'
+      }`}
     >
-      {approved ? (
-        <>
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-          </svg>
-          승인됨
-        </>
-      ) : (
-        <>승인</>
-      )}
+      {approved ? '✓ 승인' : '승인'}
     </button>
   );
 }

@@ -34,3 +34,29 @@ model Slide {
   approved  Boolean @default(false)
   createdAt DateTime @default(now())
 }
+
+model Meeting {
+  id          String        @id @default(cuid())
+  name        String
+  department  String        @default("영어과")
+  meetingType String        @default("정기회의")
+  topic       String
+  date        String        @default("")
+  attendees   String        @default("")
+  status      String        @default("record")
+  rawNotes    String?
+  items       MinutesItem[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model MinutesItem {
+  id        String  @id @default(cuid())
+  meetingId String
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  order     Int
+  type      String
+  data      String
+  done      Boolean @default(false)
+  createdAt DateTime @default(now())
+}

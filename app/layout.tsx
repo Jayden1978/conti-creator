@@ -3,8 +3,9 @@ import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Jayden CC",
+  title: "J's Conti Creator",
   description: "Korean English teacher tool for lesson slide generation",
+  icons: { icon: '/favicon.svg' },
 };
 
 export default function RootLayout({
@@ -18,12 +19,15 @@ export default function RootLayout({
         <header style={{ background: '#242424', borderBottom: '1px solid #333' }} className="sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
-              <span style={{ color: '#F97316' }} className="text-xl font-bold tracking-tight">Jayden CC</span>
+              <span style={{ color: '#F97316' }} className="text-xl font-bold tracking-tight">J's Conti Creator</span>
               <span className="text-xs px-2 py-0.5 rounded-full text-gray-400" style={{ background: '#333', fontSize: '11px' }}>AI 수업 콘티</span>
             </Link>
             <nav className="flex items-center gap-6">
               <Link href="/" className="text-sm text-gray-400 hover:text-white transition-colors">
                 대시보드
+              </Link>
+              <Link href="/meetings" className="text-sm text-gray-400 hover:text-white transition-colors">
+                회의록
               </Link>
               <Link
                 href="/projects/new"
