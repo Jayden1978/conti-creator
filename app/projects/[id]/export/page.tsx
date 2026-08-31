@@ -26,6 +26,30 @@ export default function ExportPage({ params }: { params: Promise<{ id: string }>
 
   const handlePrint = () => window.print();
 
+  const SLIDE_TYPE_LABELS: Record<SlideItem['type'], string> = {
+    'cover': '표지',
+    'feedback': '미니피드백',
+    'assignment-feedback': '과제피드백',
+    'common-qa': '공통질문',
+    'objectives': '학습목표',
+    'vocabulary': '어휘',
+    'passage': '통지문',
+    'grammar': '어법정리',
+    'exercise': '연습문제',
+    'ox-quiz': '독해OX',
+    'ox-answer': '독해OX답지',
+    'grammar-quiz': '어법퀴즈',
+    'grammar-answer': '어법퀴즈답지',
+    'grammar-chain': '꼬리질문체인',
+    'summary': '정리',
+    'micro-feedback': '수업되돌아보기',
+    'reading-activity': '독해질문',
+    'reading-answer': '독해질문정답',
+    'line-english': '문장별지문',
+    'line-english-tail': '꼬리질문',
+    'custom': '슬라이드',
+  };
+
   const handleDownloadPng = async () => {
     setPngLoading(true);
     try {
@@ -39,7 +63,8 @@ export default function ExportPage({ params }: { params: Promise<{ id: string }>
         if (!el) continue;
         const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: null });
         const blob = await new Promise<Blob>(resolve => canvas.toBlob(b => resolve(b!), 'image/png'));
-        zip.file(`${projectName}_슬라이드${String(i + 1).padStart(2, '0')}.png`, blob);
+        const label = SLIDE_TYPE_LABELS[slides[i]?.type] ?? '슬라이드';
+        zip.file(`${projectName}_${label}${String(i + 1).padStart(2, '0')}.png`, blob);
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
