@@ -64,7 +64,8 @@ export default function ExportPage({ params }: { params: Promise<{ id: string }>
         const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: null });
         const blob = await new Promise<Blob>(resolve => canvas.toBlob(b => resolve(b!), 'image/png'));
         const label = SLIDE_TYPE_LABELS[slides[i]?.type] ?? '슬라이드';
-        zip.file(`${projectName}_${label}${String(i + 1).padStart(2, '0')}.png`, blob);
+        const num = String(i + 1).padStart(String(slideRefs.current.length).length < 2 ? 2 : String(slideRefs.current.length).length, '0');
+        zip.file(`${projectName}_${num}_${label}.png`, blob);
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
